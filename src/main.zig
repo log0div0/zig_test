@@ -32,7 +32,9 @@ pub fn main() !void {
     const end_time = std.time.nanoTimestamp();
 
     const res = stbi_write_png("out.png", w, h, @sizeOf(RGB), &img, @sizeOf(RGB) * w);
-    std.debug.assert(res == 1);
+    if (res != 1) {
+        return error.UnexpectedError;
+    }
 
     const time_ms = @divFloor(end_time - start_time, std.time.ns_per_ms);
 
