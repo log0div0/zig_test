@@ -9,7 +9,42 @@ const RGB = struct {
 };
 
 test "RGB size should be 3" {
-    try std.testing.expect(@sizeOf(RGB) == 3);
+    try std.testing.expectEqual(@sizeOf(RGB), 3);
+}
+
+const Vec3 = @Vector(3, f64);
+
+test "vector devide" {
+    const v = Vec3{1, 2, 4};
+    const v2 = v / @splat(3, @as(f64, 2));
+    try std.testing.expectEqual(v2, Vec3{0.5, 1, 2});
+}
+
+fn dot(x: Vec3) f64 {
+    return @reduce(.Add, x * x);
+}
+
+fn length(x: Vec3) f64 {
+    return @sqrt(dot(x));
+}
+
+test "vector length" {
+    const v = Vec3{1, 2, 4};
+    const len = length(v);
+    try std.testing.expectApproxEqAbs(len, 4.5825756, 0.00001);
+}
+
+fn cross(u: Vec3, v: Vec3) Vec3 {
+    return .{u[1]*v[2] - u[2]*v[1],
+             u[2]*v[0] - u[0]*v[2],
+             u[0]*v[1] - u[1]*v[0]};
+}
+
+test "vector cross" {
+    const a = .{1, 2, 3};
+    const b = .{-1, 4, 5};
+    const c = cross(a, b);
+    try std.testing.expectEqual(c, .{-2, -8, 6});
 }
 
 pub fn main() !void {
@@ -22,8 +57,8 @@ pub fn main() !void {
     for (0..h) |y| {
         for (0..w) |x| {
             img[y][x] = .{
-                .r = @floatToInt(u8, @intToFloat(f32, x) / w * 255),
-                .g = @floatToInt(u8, @intToFloat(f32, y) / h * 255),
+                .r = @floatToInt(u8, @intToFloat(f64, x) / w * 255),
+                .g = @floatToInt(u8, @intToFloat(f64, y) / h * 255),
                 .b = 0,
             };
         }
