@@ -22,6 +22,7 @@
 			"name": "Test",
 			"shell_cmd": "zig build test",
 			"working_dir": "$project_path",
+			"file_regex": "(.*?):(\\d+):(\\d+): (error: .*)",
 		},
 	],
 }

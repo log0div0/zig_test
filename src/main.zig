@@ -47,26 +47,74 @@ test "vector cross" {
     try std.testing.expectEqual(c, .{-2, -8, 6});
 }
 
+const Ray = struct {
+    orig: Vec3,
+    dir: Vec3,
+
+    fn at(self: Ray, t: f64) Vec3 {
+        return self.orig + self.dir * @splat(3, t);
+    }
+};
+
+test "ray at" {
+    const ray = Ray {
+        .orig = .{1,2,3},
+        .dir = .{0,1,-2}
+    };
+    const pos = ray.at(2);
+    try std.testing.expectEqual(pos, .{1,4,-1});
+}
+
+fn normalize(vec: Vec3) Vec3 {
+    return vec / @splat(3, length(vec));
+}
+
+fn ray_color(ray: Ray) Vec3 {
+    const unit_direction = normalize(ray.dir);
+    const t = 0.5 * (unit_direction[1] + 1.0);
+    return @splat(3,(1.0-t))*Vec3{1,1,1} + @splat(3,t)*Vec3{0.5, 0.7, 1.0};
+}
+
 pub fn main() !void {
     const start_time = std.time.nanoTimestamp();
 
-    const w = 600;
-    const h = 400;
-    var img: [h][w]RGB = undefined;
+    const aspect_ratio = 16.0 / 9.0;
+    const image_width = 600;
+    const image_height = @floatToInt(comptime_int, @intToFloat(comptime_float, image_width) / aspect_ratio);
 
-    for (0..h) |y| {
-        for (0..w) |x| {
-            img[y][x] = .{
-                .r = @floatToInt(u8, @intToFloat(f64, x) / w * 255),
-                .g = @floatToInt(u8, @intToFloat(f64, y) / h * 255),
-                .b = 0,
+    const viewport_height = 2.0;
+    const viewport_width = viewport_height * aspect_ratio;
+    const focal_length = 1.0;
+
+    const origin = Vec3{0,0,0};
+    const horizontal = Vec3{viewport_width, 0, 0};
+    const vertical = Vec3{0, viewport_height, 0};
+    const two = @splat(3, @as(f64, 2));
+    const lower_left_corner = origin - horizontal/two - vertical/two - Vec3{0,0,focal_length};
+
+    var img: [image_height][image_width]RGB = undefined;
+
+    for (0..image_height) |j| {
+        for (0..image_width) |i| {
+            const u = @intToFloat(f64, i) / (image_width-1);
+            const v = @intToFloat(f64, j) / (image_height-1);
+            const ray = Ray {
+                .orig = origin,
+                .dir = lower_left_corner + @splat(3,u)*horizontal + @splat(3,v)*vertical - origin,
+            };
+            const pixel_color_normalized = ray_color(ray);
+            const pixel_color = pixel_color_normalized * @splat(3, @as(f64, 255.0));
+            img[image_height-j-1][i] = RGB{
+                .r = @floatToInt(u8, pixel_color[0]),
+                .g = @floatToInt(u8, pixel_color[1]),
+                .b = @floatToInt(u8, pixel_color[2]),
             };
         }
     }
 
     const end_time = std.time.nanoTimestamp();
 
-    const res = stbi_write_png("out.png", w, h, @sizeOf(RGB), &img, @sizeOf(RGB) * w);
+    const res = stbi_write_png("out.png", image_width, image_height, @sizeOf(RGB), &img, @sizeOf(RGB) * image_width);
     if (res != 1) {
         return error.UnexpectedError;
     }
