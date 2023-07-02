@@ -3,7 +3,7 @@ const std = @import("std");
 // Although this function looks imperative, note that its job is to
 // declaratively construct a build graph that will be executed by an external
 // runner.
-pub fn build(b: *std.Build) void {
+pub fn build(b: *std.Build) !void {
     // Standard target options allows the person running `zig build` to choose
     // what target to build for. Here we do not override the defaults, which
     // means any target is allowed, and the default is native. Other options
@@ -53,7 +53,21 @@ pub fn build(b: *std.Build) void {
     }, &.{
         "-D_GLFW_WIN32"
     });
-    exe.linkSystemLibraryName("gdi32");
+    exe.linkSystemLibrary("gdi32");
+
+    // link against Vulkan & Shaderc
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+
+    const env_map = try std.process.getEnvMap(arena.allocator());
+    if (env_map.get("VULKAN_SDK")) |vulkan_path| {
+        var tmp = [_]u8{undefined} ** 200;
+        exe.addIncludePath(try std.fmt.bufPrint(&tmp, "{s}\\Include", .{vulkan_path}));
+        exe.addLibraryPath(try std.fmt.bufPrint(&tmp, "{s}\\Lib", .{vulkan_path}));
+        exe.linkSystemLibrary("vulkan-1");
+    } else {
+        return error.VulkanEnvVarIsNotSet;
+    }
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
