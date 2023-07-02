@@ -51,12 +51,15 @@ fn createInstance() !c.VkInstance {
 	return instance;
 }
 
+var general_purpose_allocator = std.heap.GeneralPurposeAllocator(.{}){};
+var g_allocator = general_purpose_allocator.allocator();
+
 fn getGraphicsFamilyIndex(device: c.VkPhysicalDevice) !u32 {
 	var queue_count: u32 = 0;
 	c.vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_count, 0);
 
-	var queues = try std.heap.c_allocator.alloc(c.VkQueueFamilyProperties, queue_count);
-	defer std.heap.c_allocator.free(queues);
+	var queues = try g_allocator.alloc(c.VkQueueFamilyProperties, queue_count);
+	defer g_allocator.free(queues);
 
 	c.vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_count, queues.ptr);
 
@@ -122,6 +125,8 @@ fn pickPhysicalDevice(physical_devices: []c.VkPhysicalDevice) !c.VkPhysicalDevic
 }
 
 pub fn main() !void {
+	defer _ = general_purpose_allocator.deinit();
+
 	_ = c.glfwSetErrorCallback(glfwErrorCallback);
 
 	if (c.glfwInit() == c.GL_FALSE) {
@@ -139,7 +144,9 @@ pub fn main() !void {
 	try VK_CHECK(c.vkEnumeratePhysicalDevices(instance, &physical_device_count, &physical_devices));
 
 	const physical_device = try pickPhysicalDevice(physical_devices[0..physical_device_count]);
-	_ = physical_device;
+
+	const family_index = try getGraphicsFamilyIndex(physical_device);
+	std.debug.assert(family_index != c.VK_QUEUE_FAMILY_IGNORED);
 
 	std.debug.print("Hello world\n", .{});
 }
