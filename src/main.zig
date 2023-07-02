@@ -16,7 +16,6 @@ fn VK_CHECK(result: c.VkResult) !void {
 }
 
 fn createInstance() !c.VkInstance {
-
 	const app_info = std.mem.zeroInit(c.VkApplicationInfo, .{
 		.sType = c.VK_STRUCTURE_TYPE_APPLICATION_INFO,
 		.apiVersion = c.VK_API_VERSION_1_3,
@@ -124,6 +123,34 @@ fn pickPhysicalDevice(physical_devices: []c.VkPhysicalDevice) !c.VkPhysicalDevic
 	}
 }
 
+fn createDevice(physical_device: c.VkPhysicalDevice, family_index: u32) error{VkError}!c.VkDevice
+{
+	const queue_priorities = [_]f32{ 1.0 };
+
+	const queue_info = std.mem.zeroInit(c.VkDeviceQueueCreateInfo, .{
+		.sType = c.VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+		.queueFamilyIndex = family_index,
+		.queueCount = queue_priorities.len,
+		.pQueuePriorities = &queue_priorities,
+	});
+
+	const extensions = [_][*:0]const u8 {
+		c.VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+	};
+
+	const createInfo = std.mem.zeroInit(c.VkDeviceCreateInfo, .{
+		.sType = c.VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+		.queueCreateInfoCount = 1,
+		.pQueueCreateInfos = &queue_info,
+		.ppEnabledExtensionNames = &extensions,
+		.enabledExtensionCount = extensions.len,
+	});
+
+	var device: c.VkDevice = null;
+	try VK_CHECK(c.vkCreateDevice(physical_device, &createInfo, 0, &device));
+	return device;
+}
+
 pub fn main() !void {
 	defer _ = general_purpose_allocator.deinit();
 
@@ -147,6 +174,9 @@ pub fn main() !void {
 
 	const family_index = try getGraphicsFamilyIndex(physical_device);
 	std.debug.assert(family_index != c.VK_QUEUE_FAMILY_IGNORED);
+
+	const device = try createDevice(physical_device, family_index);
+	defer c.vkDestroyDevice(device, null);
 
 	std.debug.print("Hello world\n", .{});
 }
