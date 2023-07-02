@@ -56,7 +56,7 @@ pub fn build(b: *std.Build) !void {
     exe.linkSystemLibrary("gdi32");
 
     // link against Vulkan & Shaderc
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    var arena = std.heap.ArenaAllocator.init(b.allocator);
     defer arena.deinit();
 
     const env_map = try std.process.getEnvMap(arena.allocator());
