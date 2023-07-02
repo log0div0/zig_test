@@ -24,9 +24,36 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    exe.addIncludePath("libs/stb");
     exe.linkLibC();
-    exe.addCSourceFile("src/stb.c", &.{});
+
+    // compile and link against GLWF
+    exe.addIncludePath("libs/glfw/include");
+    exe.addCSourceFiles(&.{
+        "libs/glfw/src/init.c",
+        "libs/glfw/src/win32_init.c",
+        "libs/glfw/src/win32_thread.c",
+        "libs/glfw/src/win32_time.c",
+        "libs/glfw/src/win32_module.c",
+        "libs/glfw/src/win32_window.c",
+        "libs/glfw/src/win32_monitor.c",
+        "libs/glfw/src/win32_joystick.c",
+        "libs/glfw/src/platform.c",
+        "libs/glfw/src/input.c",
+        "libs/glfw/src/window.c",
+        "libs/glfw/src/monitor.c",
+        "libs/glfw/src/vulkan.c",
+        "libs/glfw/src/null_init.c",
+        "libs/glfw/src/null_window.c",
+        "libs/glfw/src/null_monitor.c",
+        "libs/glfw/src/null_joystick.c",
+        "libs/glfw/src/context.c",
+        "libs/glfw/src/osmesa_context.c",
+        "libs/glfw/src/egl_context.c",
+        "libs/glfw/src/wgl_context.c",
+    }, &.{
+        "-D_GLFW_WIN32"
+    });
+    exe.linkSystemLibraryName("gdi32");
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
