@@ -2,8 +2,11 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 const c = @cImport({
-	@cDefine("VK_USE_PLATFORM_WIN32_KHR", {});
+	@cDefine("GLFW_EXPOSE_NATIVE_WIN32", {});
 	@cInclude("GLFW/glfw3.h");
+	@cInclude("GLFW/glfw3native.h");
+
+	@cDefine("VK_USE_PLATFORM_WIN32_KHR", {});
 	@cInclude("vulkan/vulkan.h");
 });
 
@@ -46,7 +49,7 @@ fn createInstance() !c.VkInstance {
 	});
 
 	var instance: c.VkInstance = null;
-	try VK_CHECK(c.vkCreateInstance(&create_info, 0, &instance));
+	try VK_CHECK(c.vkCreateInstance(&create_info, null, &instance));
 	return instance;
 }
 
@@ -55,7 +58,7 @@ var g_allocator = general_purpose_allocator.allocator();
 
 fn getGraphicsFamilyIndex(device: c.VkPhysicalDevice) !u32 {
 	var queue_count: u32 = 0;
-	c.vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_count, 0);
+	c.vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_count, null);
 
 	var queues = try g_allocator.alloc(c.VkQueueFamilyProperties, queue_count);
 	defer g_allocator.free(queues);
@@ -147,8 +150,54 @@ fn createDevice(physical_device: c.VkPhysicalDevice, family_index: u32) error{Vk
 	});
 
 	var device: c.VkDevice = null;
-	try VK_CHECK(c.vkCreateDevice(physical_device, &createInfo, 0, &device));
+	try VK_CHECK(c.vkCreateDevice(physical_device, &createInfo, null, &device));
 	return device;
+}
+
+fn createSurface(instance: c.VkInstance, window: ?*c.GLFWwindow) !c.VkSurfaceKHR {
+	const create_info = std.mem.zeroInit(c.VkWin32SurfaceCreateInfoKHR, .{
+		.sType = c.VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR,
+		.hinstance = c.GetModuleHandleW(null),
+		.hwnd = c.glfwGetWin32Window(window),
+	});
+
+	var surface: c.VkSurfaceKHR = null;
+	try VK_CHECK(c.vkCreateWin32SurfaceKHR(instance, &create_info, null, &surface));
+	return surface;
+}
+
+fn getSwapchainFormat(physical_device: c.VkPhysicalDevice, surface: c.VkSurfaceKHR) !c.VkFormat
+{
+	var format_count: u32 = 0;
+	try VK_CHECK(c.vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &format_count, 0));
+
+	std.debug.assert(format_count > 0);
+	var formats = try g_allocator.alloc(c.VkSurfaceFormatKHR, format_count);
+	defer g_allocator.free(formats);
+
+	try VK_CHECK(c.vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &format_count, formats.ptr));
+
+	if (format_count == 1 and formats[0].format == c.VK_FORMAT_UNDEFINED) {
+		return c.VK_FORMAT_R8G8B8A8_UNORM;
+	}
+
+	for (0..format_count) |i| {
+		if (formats[i].format == c.VK_FORMAT_R8G8B8A8_UNORM or formats[i].format == c.VK_FORMAT_B8G8R8A8_UNORM) {
+			return formats[i].format;
+		}
+	}
+
+	return formats[0].format;
+}
+
+fn createSemaphore(device: c.VkDevice) !c.VkSemaphore {
+	const createInfo = std.mem.zeroInit(c.VkSemaphoreCreateInfo, .{
+		.sType = c.VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+	});
+
+	var semaphore: c.VkSemaphore = null;
+	try VK_CHECK(c.vkCreateSemaphore(device, &createInfo, null, &semaphore));
+	return semaphore;
 }
 
 pub fn main() !void {
@@ -177,6 +226,36 @@ pub fn main() !void {
 
 	const device = try createDevice(physical_device, family_index);
 	defer c.vkDestroyDevice(device, null);
+
+	const window = c.glfwCreateWindow(1024, 768, "zig_test", null, null);
+	if (window == null) {
+		return error.FailedToCreateWindow;
+	}
+	defer c.glfwDestroyWindow(window);
+
+	const surface = try createSurface(instance, window);
+	defer c.vkDestroySurfaceKHR(instance, surface, null);
+
+	const swapchain_format = try getSwapchainFormat(physical_device, surface);
+	const depth_format = c.VK_FORMAT_D32_SFLOAT;
+
+	const acquire_semaphore = try createSemaphore(device);
+	defer c.vkDestroySemaphore(device, acquire_semaphore, null);
+	const release_semaphore = try createSemaphore(device);
+	defer c.vkDestroySemaphore(device, release_semaphore, null);
+
+	const queue = blk: {
+		var tmp: c.VkQueue = null;
+		c.vkGetDeviceQueue(device, family_index, 0, &tmp);
+		break :blk tmp;
+	};
+
+	// const render_pass = createRenderPass(device, swapchain_format, depth_format, /* late= */ false);
+
+
+	_ = swapchain_format;
+	_ = depth_format;
+	_ = queue;
 
 	std.debug.print("Hello world\n", .{});
 }
