@@ -16,7 +16,10 @@
 			"path": "C:\\VulkanSDK\\1.3.250.1\\Include\\shaderc",
 		},
 		{
-			"path": "C:\\VulkanSDK\\1.3.250.1\\Include\\vulkan"
+			"path": "C:\\VulkanSDK\\1.3.250.1\\Include\\vulkan",
+		},
+		{
+			"path": "C:\\Users\\log0div0\\work\\just_for_fun"
 		},
 	],
 	"build_systems":
