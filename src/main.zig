@@ -11,11 +11,16 @@ const c = @cImport({
 });
 
 export fn glfwErrorCallback(err: c_int, description: [*c]const u8) void {
-    std.log.err("GLFW error #{}: {s}", .{err, description});
+	std.log.err("GLFW error #{}: {s}", .{err, description});
 }
 
 fn VK_CHECK(result: c.VkResult) !void {
 	return if (result == c.VK_SUCCESS) {} else error.VkError;
+}
+
+fn VK_CHECK_SWAPCHAIN(result: c.VkResult) !void {
+	// just ignore the error until the next frame when we will recreate a swapchain anyway
+	return if (result == c.VK_SUCCESS or result == c.VK_SUBOPTIMAL_KHR or result == c.VK_ERROR_OUT_OF_DATE_KHR) {} else error.VkError;
 }
 
 fn createInstance() !c.VkInstance {
@@ -141,8 +146,15 @@ fn createDevice(physical_device: c.VkPhysicalDevice, family_index: u32) error{Vk
 		c.VK_KHR_SWAPCHAIN_EXTENSION_NAME,
 	};
 
+	const features13 = std.mem.zeroInit(c.VkPhysicalDeviceVulkan13Features, .{
+		.sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
+		.dynamicRendering = 1,
+		.synchronization2 = 1,
+	});
+
 	const create_info = std.mem.zeroInit(c.VkDeviceCreateInfo, .{
 		.sType = c.VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+		.pNext = &features13,
 		.queueCreateInfoCount = 1,
 		.pQueueCreateInfos = &queue_info,
 		.ppEnabledExtensionNames = &extensions,
@@ -281,10 +293,16 @@ export fn keyCallback(window: ?*c.GLFWwindow, key: c_int, scancode: c_int, actio
 
 const VSYNC = true;
 
+const SwapchainStatus = enum {
+	ready,
+	not_ready,
+	resized,
+};
+
 const Swapchain = struct {
 	const max_image_count = 3;
 
-	swapchain: c.VkSwapchainKHR,
+	handle: c.VkSwapchainKHR,
 	images: [max_image_count]c.VkImage,
 	width: u32,
 	height: u32,
@@ -335,7 +353,8 @@ const Swapchain = struct {
 		return swapchain;
 	}
 
-	fn init(physical_device: c.VkPhysicalDevice,
+	fn init(
+		physical_device: c.VkPhysicalDevice,
 		device: c.VkDevice,
 		surface: c.VkSurfaceKHR,
 		family_index: u32,
@@ -359,7 +378,7 @@ const Swapchain = struct {
 		try VK_CHECK(c.vkGetSwapchainImagesKHR(device, swapchain, &image_count, &images));
 
 		return Swapchain {
-			.swapchain = swapchain,
+			.handle = swapchain,
 			.images = images,
 			.width = width,
 			.height = height,
@@ -367,9 +386,38 @@ const Swapchain = struct {
 		};
 	}
 
+	fn update(self: *Swapchain,
+		physical_device: c.VkPhysicalDevice,
+		device: c.VkDevice,
+		surface: c.VkSurfaceKHR,
+		family_index: u32,
+		format: c.VkFormat) !SwapchainStatus
+	{
+		var surface_caps: c.VkSurfaceCapabilitiesKHR = undefined;
+		try VK_CHECK(c.vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, surface, &surface_caps));
+
+		const new_width = surface_caps.currentExtent.width;
+		const new_height = surface_caps.currentExtent.height;
+
+		if (new_width == 0 or new_height == 0)
+			return SwapchainStatus.not_ready;
+
+		if (self.width == new_width and self.height == new_height)
+			return SwapchainStatus.ready;
+
+		var new_swapchain = try Swapchain.init(physical_device, device, surface, family_index, format, self.handle);
+		errdefer new_swapchain.deinit(device);
+
+		try VK_CHECK(c.vkDeviceWaitIdle(device));
+
+		self.deinit(device);
+		self.* = new_swapchain;
+		return SwapchainStatus.resized;
+	}
+
 	fn deinit(self: *Swapchain, device: c.VkDevice) void
 	{
-		c.vkDestroySwapchainKHR(device, self.swapchain, null);
+		c.vkDestroySwapchainKHR(device, self.handle, null);
 	}
 };
 
@@ -445,15 +493,91 @@ pub fn main() !void {
 		break :blk tmp;
 	};
 
-	_ = command_buffer;
-	_ = queue;
-
 	var swapchain = try Swapchain.init(physical_device, device, surface, family_index, swapchain_format, null);
 	defer swapchain.deinit(device);
+
+	defer _ = c.vkDeviceWaitIdle(device);
 
 	while (c.glfwWindowShouldClose(window) == 0)
 	{
 		c.glfwPollEvents();
+
+		const swapchain_status = try swapchain.update(physical_device, device, surface, family_index, swapchain_format);
+
+		if (swapchain_status == SwapchainStatus.not_ready) {
+			continue;
+		}
+
+		if (swapchain_status == SwapchainStatus.resized) {
+			// update resources here
+		}
+
+		const image_index = blk: {
+			var image_index: u32 = 0;
+			try VK_CHECK_SWAPCHAIN(c.vkAcquireNextImageKHR(device, swapchain.handle, std.math.maxInt(u64), acquire_semaphore, null, &image_index));
+			break :blk image_index;
+		};
+
+		try VK_CHECK(c.vkResetCommandPool(device, command_pool, 0));
+
+		const begin_info = std.mem.zeroInit(c.VkCommandBufferBeginInfo, .{
+			.sType = c.VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+			.flags = c.VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+		});
+
+		try VK_CHECK(c.vkBeginCommandBuffer(command_buffer, &begin_info));
+
+		c.vkCmdPipelineBarrier2(command_buffer, &std.mem.zeroInit(c.VkDependencyInfo, .{
+			.sType = c.VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+			.imageMemoryBarrierCount = 1,
+			.pImageMemoryBarriers = &std.mem.zeroInit(c.VkImageMemoryBarrier2, .{
+				.sType = c.VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+				.srcStageMask = c.VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+				.srcAccessMask = 0,
+				.dstStageMask = c.VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+				.dstAccessMask = 0,
+				.oldLayout = c.VK_IMAGE_LAYOUT_UNDEFINED,
+				.newLayout = c.VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+				.image = swapchain.images[image_index],
+				.subresourceRange = c.VkImageSubresourceRange {
+					.aspectMask = c.VK_IMAGE_ASPECT_COLOR_BIT,
+					.baseMipLevel = 0,
+					.levelCount = c.VK_REMAINING_MIP_LEVELS,
+					.baseArrayLayer = 0,
+					.layerCount = c.VK_REMAINING_ARRAY_LAYERS,
+				},
+			}),
+		}));
+
+		try VK_CHECK(c.vkEndCommandBuffer(command_buffer));
+
+		const submit_dst_stage_mask: c.VkPipelineStageFlags = c.VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT; // TODO!!!!!!!!!!!
+
+		const submit_info = std.mem.zeroInit(c.VkSubmitInfo, .{
+			.sType = c.VK_STRUCTURE_TYPE_SUBMIT_INFO,
+			.waitSemaphoreCount = 1,
+			.pWaitSemaphores = &acquire_semaphore,
+			.pWaitDstStageMask = &submit_dst_stage_mask,
+			.commandBufferCount = 1,
+			.pCommandBuffers = &command_buffer,
+			.signalSemaphoreCount = 1,
+			.pSignalSemaphores = &release_semaphore,
+		});
+
+		try VK_CHECK(c.vkQueueSubmit(queue, 1, &submit_info, null));
+
+		const present_info = std.mem.zeroInit(c.VkPresentInfoKHR, .{
+			.sType = c.VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+			.waitSemaphoreCount = 1,
+			.pWaitSemaphores = &release_semaphore,
+			.swapchainCount = 1,
+			.pSwapchains = &swapchain.handle,
+			.pImageIndices = &image_index,
+		});
+
+		try VK_CHECK_SWAPCHAIN(c.vkQueuePresentKHR(queue, &present_info));
+
+		try VK_CHECK(c.vkDeviceWaitIdle(device)); // TODO!!!!!!!!!!!
 	}
 
 	std.debug.print("Hello world\n", .{});
