@@ -206,57 +206,6 @@ fn createSemaphore(device: c.VkDevice) !c.VkSemaphore {
 	return semaphore;
 }
 
-
-// fn createRenderPass(device: c.VkDevice, color_format: c.VkFormat, depth_format: c.VkFormat) !c.VkRenderPass
-// {
-// 	const attachments = [_]c.VkAttachmentDescription{
-// 		.{
-// 			.flags = 0,
-// 			.format = color_format,
-// 			.samples = c.VK_SAMPLE_COUNT_1_BIT,
-// 			.loadOp = c.VK_ATTACHMENT_LOAD_OP_CLEAR,
-// 			.storeOp = c.VK_ATTACHMENT_STORE_OP_STORE,
-// 			.stencilLoadOp = c.VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-// 			.stencilStoreOp = c.VK_ATTACHMENT_STORE_OP_DONT_CARE,
-// 			.initialLayout = c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-// 			.finalLayout = c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-// 		},
-// 		.{
-// 			.flags = 0,
-// 			.format = depth_format,
-// 			.samples = c.VK_SAMPLE_COUNT_1_BIT,
-// 			.loadOp = c.VK_ATTACHMENT_LOAD_OP_CLEAR,
-// 			.storeOp = c.VK_ATTACHMENT_STORE_OP_STORE,
-// 			.stencilLoadOp = c.VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-// 			.stencilStoreOp = c.VK_ATTACHMENT_STORE_OP_DONT_CARE,
-// 			.initialLayout = c.VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-// 			.finalLayout = c.VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-// 		}
-// 	};
-
-// 	const color_ref = c.VkAttachmentReference{ .attachment = 0, .layout = c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL };
-// 	const depth_def = c.VkAttachmentReference{ .attachment = 1, .layout = c.VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL };
-
-// 	const subpass = std.mem.zeroInit(c.VkSubpassDescription, .{
-// 		.pipelineBindPoint = c.VK_PIPELINE_BIND_POINT_GRAPHICS,
-// 		.colorAttachmentCount = 1,
-// 		.pColorAttachments = &color_ref,
-// 		.pDepthStencilAttachment = &depth_def,
-// 	});
-
-// 	const create_info = std.mem.zeroInit(c.VkRenderPassCreateInfo, .{
-// 		.sType = c.VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-// 		.attachmentCount = attachments.len,
-// 		.pAttachments = &attachments,
-// 		.subpassCount = 1,
-// 		.pSubpasses = &subpass,
-// 	});
-
-// 	var renderPass: c.VkRenderPass = null;
-// 	try VK_CHECK(c.vkCreateRenderPass(device, &create_info, null, &renderPass));
-// 	return renderPass;
-// }
-
 fn createCommandPool(device: c.VkDevice, family_index: u32) !c.VkCommandPool
 {
 	const create_info = c.VkCommandPoolCreateInfo{
@@ -364,9 +313,6 @@ pub fn main() !void {
 		c.vkGetDeviceQueue(device, family_index, 0, &tmp);
 		break :blk tmp;
 	};
-
-	// const render_pass = try createRenderPass(device, surface_format, depth_format);
-	// defer c.vkDestroyRenderPass(device, render_pass, null);
 
 	const command_pool = try createCommandPool(device, family_index);
 	defer c.vkDestroyCommandPool(device, command_pool, null);
