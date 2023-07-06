@@ -1,14 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
-
-const c = @cImport({
-	@cDefine("GLFW_EXPOSE_NATIVE_WIN32", {});
-	@cInclude("GLFW/glfw3.h");
-	@cInclude("GLFW/glfw3native.h");
-
-	@cDefine("VK_USE_PLATFORM_WIN32_KHR", {});
-	@cInclude("vulkan/vulkan.h");
-});
+const c = @import("c.zig");
+const Swapchain = @import("swapchain.zig");
 
 export fn glfwErrorCallback(err: c_int, description: [*c]const u8) void {
 	std.log.err("GLFW error #{}: {s}", .{err, description});
@@ -178,7 +171,7 @@ fn createSurface(instance: c.VkInstance, window: ?*c.GLFWwindow) !c.VkSurfaceKHR
 	return surface;
 }
 
-fn getSwapchainFormat(physical_device: c.VkPhysicalDevice, surface: c.VkSurfaceKHR) !c.VkFormat
+fn getSurfaceFormat(physical_device: c.VkPhysicalDevice, surface: c.VkSurfaceKHR) !c.VkFormat
 {
 	var format_count: u32 = 0;
 	try VK_CHECK(c.vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &format_count, 0));
@@ -213,55 +206,55 @@ fn createSemaphore(device: c.VkDevice) !c.VkSemaphore {
 }
 
 
-fn createRenderPass(device: c.VkDevice, color_format: c.VkFormat, depth_format: c.VkFormat) !c.VkRenderPass
-{
-	const attachments = [_]c.VkAttachmentDescription{
-		.{
-			.flags = 0,
-			.format = color_format,
-			.samples = c.VK_SAMPLE_COUNT_1_BIT,
-			.loadOp = c.VK_ATTACHMENT_LOAD_OP_CLEAR,
-			.storeOp = c.VK_ATTACHMENT_STORE_OP_STORE,
-			.stencilLoadOp = c.VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-			.stencilStoreOp = c.VK_ATTACHMENT_STORE_OP_DONT_CARE,
-			.initialLayout = c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-			.finalLayout = c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-		},
-		.{
-			.flags = 0,
-			.format = depth_format,
-			.samples = c.VK_SAMPLE_COUNT_1_BIT,
-			.loadOp = c.VK_ATTACHMENT_LOAD_OP_CLEAR,
-			.storeOp = c.VK_ATTACHMENT_STORE_OP_STORE,
-			.stencilLoadOp = c.VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-			.stencilStoreOp = c.VK_ATTACHMENT_STORE_OP_DONT_CARE,
-			.initialLayout = c.VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-			.finalLayout = c.VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-		}
-	};
+// fn createRenderPass(device: c.VkDevice, color_format: c.VkFormat, depth_format: c.VkFormat) !c.VkRenderPass
+// {
+// 	const attachments = [_]c.VkAttachmentDescription{
+// 		.{
+// 			.flags = 0,
+// 			.format = color_format,
+// 			.samples = c.VK_SAMPLE_COUNT_1_BIT,
+// 			.loadOp = c.VK_ATTACHMENT_LOAD_OP_CLEAR,
+// 			.storeOp = c.VK_ATTACHMENT_STORE_OP_STORE,
+// 			.stencilLoadOp = c.VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+// 			.stencilStoreOp = c.VK_ATTACHMENT_STORE_OP_DONT_CARE,
+// 			.initialLayout = c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+// 			.finalLayout = c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+// 		},
+// 		.{
+// 			.flags = 0,
+// 			.format = depth_format,
+// 			.samples = c.VK_SAMPLE_COUNT_1_BIT,
+// 			.loadOp = c.VK_ATTACHMENT_LOAD_OP_CLEAR,
+// 			.storeOp = c.VK_ATTACHMENT_STORE_OP_STORE,
+// 			.stencilLoadOp = c.VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+// 			.stencilStoreOp = c.VK_ATTACHMENT_STORE_OP_DONT_CARE,
+// 			.initialLayout = c.VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+// 			.finalLayout = c.VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+// 		}
+// 	};
 
-	const color_ref = c.VkAttachmentReference{ .attachment = 0, .layout = c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL };
-	const depth_def = c.VkAttachmentReference{ .attachment = 1, .layout = c.VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL };
+// 	const color_ref = c.VkAttachmentReference{ .attachment = 0, .layout = c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL };
+// 	const depth_def = c.VkAttachmentReference{ .attachment = 1, .layout = c.VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL };
 
-	const subpass = std.mem.zeroInit(c.VkSubpassDescription, .{
-		.pipelineBindPoint = c.VK_PIPELINE_BIND_POINT_GRAPHICS,
-		.colorAttachmentCount = 1,
-		.pColorAttachments = &color_ref,
-		.pDepthStencilAttachment = &depth_def,
-	});
+// 	const subpass = std.mem.zeroInit(c.VkSubpassDescription, .{
+// 		.pipelineBindPoint = c.VK_PIPELINE_BIND_POINT_GRAPHICS,
+// 		.colorAttachmentCount = 1,
+// 		.pColorAttachments = &color_ref,
+// 		.pDepthStencilAttachment = &depth_def,
+// 	});
 
-	const create_info = std.mem.zeroInit(c.VkRenderPassCreateInfo, .{
-		.sType = c.VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-		.attachmentCount = attachments.len,
-		.pAttachments = &attachments,
-		.subpassCount = 1,
-		.pSubpasses = &subpass,
-	});
+// 	const create_info = std.mem.zeroInit(c.VkRenderPassCreateInfo, .{
+// 		.sType = c.VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+// 		.attachmentCount = attachments.len,
+// 		.pAttachments = &attachments,
+// 		.subpassCount = 1,
+// 		.pSubpasses = &subpass,
+// 	});
 
-	var renderPass: c.VkRenderPass = null;
-	try VK_CHECK(c.vkCreateRenderPass(device, &create_info, null, &renderPass));
-	return renderPass;
-}
+// 	var renderPass: c.VkRenderPass = null;
+// 	try VK_CHECK(c.vkCreateRenderPass(device, &create_info, null, &renderPass));
+// 	return renderPass;
+// }
 
 fn createCommandPool(device: c.VkDevice, family_index: u32) !c.VkCommandPool
 {
@@ -290,136 +283,6 @@ export fn keyCallback(window: ?*c.GLFWwindow, key: c_int, scancode: c_int, actio
 		}
 	}
 }
-
-const VSYNC = true;
-
-const SwapchainStatus = enum {
-	ready,
-	not_ready,
-	resized,
-};
-
-const Swapchain = struct {
-	const max_image_count = 3;
-
-	handle: c.VkSwapchainKHR,
-	images: [max_image_count]c.VkImage,
-	width: u32,
-	height: u32,
-	image_count: u32,
-
-	fn createSwapchain(
-		device: c.VkDevice,
-		surface: c.VkSurfaceKHR,
-		surface_caps: c.VkSurfaceCapabilitiesKHR,
-		family_index: u32,
-		format: c.VkFormat,
-		width: u32,
-		height: u32,
-		old_swapchain: c.VkSwapchainKHR) !c.VkSwapchainKHR
-	{
-		const surface_composite: c.VkCompositeAlphaFlagBitsKHR =
-			if (surface_caps.supportedCompositeAlpha & c.VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR != 0)
-				c.VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR
-			else if (surface_caps.supportedCompositeAlpha & c.VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR != 0)
-				c.VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR
-			else if (surface_caps.supportedCompositeAlpha & c.VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR != 0)
-				c.VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR
-			else
-				c.VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
-
-		const create_info = std.mem.zeroInit(c.VkSwapchainCreateInfoKHR, .{
-			.sType = c.VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-			.surface = surface,
-			.minImageCount = @max(2, surface_caps.minImageCount),
-			.imageFormat = format,
-			.imageColorSpace = c.VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
-			.imageExtent = .{
-				.width = width,
-				.height = height,
-			},
-			.imageArrayLayers = 1,
-			.imageUsage = c.VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-			.queueFamilyIndexCount = 1,
-			.pQueueFamilyIndices = &family_index,
-			.preTransform = c.VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,
-			.compositeAlpha = surface_composite,
-			.presentMode = if (VSYNC) c.VK_PRESENT_MODE_FIFO_KHR else c.VK_PRESENT_MODE_IMMEDIATE_KHR,
-			.oldSwapchain = old_swapchain,
-		});
-
-		var swapchain: c.VkSwapchainKHR = null;
-		try VK_CHECK(c.vkCreateSwapchainKHR(device, &create_info, null, &swapchain));
-		return swapchain;
-	}
-
-	fn init(
-		physical_device: c.VkPhysicalDevice,
-		device: c.VkDevice,
-		surface: c.VkSurfaceKHR,
-		family_index: u32,
-		format: c.VkFormat,
-		old_swapchain: c.VkSwapchainKHR) !Swapchain
-	{
-		var surface_caps: c.VkSurfaceCapabilitiesKHR = undefined;
-		try VK_CHECK(c.vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, surface, &surface_caps));
-
-		const width = surface_caps.currentExtent.width;
-		const height = surface_caps.currentExtent.height;
-
-		const swapchain = try createSwapchain(device, surface, surface_caps, family_index, format, width, height, old_swapchain);
-
-		var image_count: u32 = 0;
-		try VK_CHECK(c.vkGetSwapchainImagesKHR(device, swapchain, &image_count, 0));
-
-		std.debug.assert(image_count <= max_image_count);
-
-		var images: [max_image_count]c.VkImage = undefined;
-		try VK_CHECK(c.vkGetSwapchainImagesKHR(device, swapchain, &image_count, &images));
-
-		return Swapchain {
-			.handle = swapchain,
-			.images = images,
-			.width = width,
-			.height = height,
-			.image_count = image_count,
-		};
-	}
-
-	fn update(self: *Swapchain,
-		physical_device: c.VkPhysicalDevice,
-		device: c.VkDevice,
-		surface: c.VkSurfaceKHR,
-		family_index: u32,
-		format: c.VkFormat) !SwapchainStatus
-	{
-		var surface_caps: c.VkSurfaceCapabilitiesKHR = undefined;
-		try VK_CHECK(c.vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, surface, &surface_caps));
-
-		const new_width = surface_caps.currentExtent.width;
-		const new_height = surface_caps.currentExtent.height;
-
-		if (new_width == 0 or new_height == 0)
-			return SwapchainStatus.not_ready;
-
-		if (self.width == new_width and self.height == new_height)
-			return SwapchainStatus.ready;
-
-		var new_swapchain = try Swapchain.init(physical_device, device, surface, family_index, format, self.handle);
-		errdefer new_swapchain.deinit(device);
-
-		try VK_CHECK(c.vkDeviceWaitIdle(device));
-
-		self.deinit(device);
-		self.* = new_swapchain;
-		return SwapchainStatus.resized;
-	}
-
-	fn deinit(self: *Swapchain, device: c.VkDevice) void
-	{
-		c.vkDestroySwapchainKHR(device, self.handle, null);
-	}
-};
 
 pub fn main() !void {
 	defer _ = general_purpose_allocator.deinit();
@@ -459,8 +322,8 @@ pub fn main() !void {
 	const surface = try createSurface(instance, window);
 	defer c.vkDestroySurfaceKHR(instance, surface, null);
 
-	const swapchain_format = try getSwapchainFormat(physical_device, surface);
-	const depth_format = c.VK_FORMAT_D32_SFLOAT;
+	const surface_format = try getSurfaceFormat(physical_device, surface);
+	// const depth_format = c.VK_FORMAT_D32_SFLOAT;
 
 	const acquire_semaphore = try createSemaphore(device);
 	defer c.vkDestroySemaphore(device, acquire_semaphore, null);
@@ -473,8 +336,8 @@ pub fn main() !void {
 		break :blk tmp;
 	};
 
-	const render_pass = try createRenderPass(device, swapchain_format, depth_format);
-	defer c.vkDestroyRenderPass(device, render_pass, null);
+	// const render_pass = try createRenderPass(device, surface_format, depth_format);
+	// defer c.vkDestroyRenderPass(device, render_pass, null);
 
 	const command_pool = try createCommandPool(device, family_index);
 	defer c.vkDestroyCommandPool(device, command_pool, null);
@@ -493,7 +356,7 @@ pub fn main() !void {
 		break :blk tmp;
 	};
 
-	var swapchain = try Swapchain.init(physical_device, device, surface, family_index, swapchain_format, null);
+	var swapchain = try Swapchain.init(physical_device, device, surface, family_index, surface_format, null);
 	defer swapchain.deinit(device);
 
 	defer _ = c.vkDeviceWaitIdle(device);
@@ -502,13 +365,13 @@ pub fn main() !void {
 	{
 		c.glfwPollEvents();
 
-		const swapchain_status = try swapchain.update(physical_device, device, surface, family_index, swapchain_format);
+		const swapchain_status = try swapchain.update(physical_device, device, surface, family_index, surface_format);
 
-		if (swapchain_status == SwapchainStatus.not_ready) {
+		if (swapchain_status == .not_ready) {
 			continue;
 		}
 
-		if (swapchain_status == SwapchainStatus.resized) {
+		if (swapchain_status == .resized) {
 			// update resources here
 		}
 
