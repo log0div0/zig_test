@@ -2,6 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const c = @import("c.zig");
 const Swapchain = @import("swapchain.zig");
+const Image = @import("resources.zig").Image;
 
 export fn glfwErrorCallback(err: c_int, description: [*c]const u8) void {
 	std.log.err("GLFW error #{}: {s}", .{err, description});
@@ -284,6 +285,35 @@ export fn keyCallback(window: ?*c.GLFWwindow, key: c_int, scancode: c_int, actio
 	}
 }
 
+const FrameData = struct{
+	const color_format = c.VK_FORMAT_R16G16B16A16_UNORM;
+	const depth_format = c.VK_FORMAT_D32_SFLOAT;
+
+	color_target: Image,
+	depth_target: Image,
+
+	fn init(
+		device: c.VkDevice,
+		memory_properties: c.VkPhysicalDeviceMemoryProperties,
+		swapchain: Swapchain,
+	) !FrameData {
+
+		const color_target = try Image.init(device, memory_properties, swapchain.width, swapchain.height, 1, color_format,
+			c.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | c.VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+		const depth_target = try Image.init(device, memory_properties, swapchain.width, swapchain.height, 1, depth_format,
+			c.VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
+
+		return .{
+			.color_target = color_target,
+			.depth_target = depth_target,
+		};
+	}
+	fn deinit(self: *FrameData, device: c.VkDevice) void {
+		self.color_target.deinit(device);
+		self.depth_target.deinit(device);
+	}
+};
+
 pub fn main() !void {
 	defer _ = general_purpose_allocator.deinit();
 
@@ -323,7 +353,6 @@ pub fn main() !void {
 	defer c.vkDestroySurfaceKHR(instance, surface, null);
 
 	const surface_format = try getSurfaceFormat(physical_device, surface);
-	// const depth_format = c.VK_FORMAT_D32_SFLOAT;
 
 	const acquire_semaphore = try createSemaphore(device);
 	defer c.vkDestroySemaphore(device, acquire_semaphore, null);
@@ -359,6 +388,15 @@ pub fn main() !void {
 	var swapchain = try Swapchain.init(physical_device, device, surface, family_index, surface_format, null);
 	defer swapchain.deinit(device);
 
+	const memory_properties = blk: {
+		var memory_properties: c.VkPhysicalDeviceMemoryProperties = undefined;
+		c.vkGetPhysicalDeviceMemoryProperties(physical_device, &memory_properties);
+		break :blk memory_properties;
+	};
+
+	var frame_data = try FrameData.init(device, memory_properties, swapchain);
+	defer frame_data.deinit(device);
+
 	defer _ = c.vkDeviceWaitIdle(device);
 
 	while (c.glfwWindowShouldClose(window) == 0)
@@ -372,7 +410,8 @@ pub fn main() !void {
 		}
 
 		if (swapchain_status == .resized) {
-			// update resources here
+			frame_data.deinit(device);
+			frame_data = try FrameData.init(device, memory_properties, swapchain);
 		}
 
 		const image_index = blk: {
