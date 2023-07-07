@@ -263,6 +263,70 @@ const FrameData = struct{
 	}
 };
 
+fn renderFrame(command_buffer: c.VkCommandBuffer, swapchain: Swapchain, frame_data: *FrameData) void {
+
+    const color_attachment = std.mem.zeroInit(c.VkRenderingAttachmentInfo, .{
+        .sType = c.VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+        .imageView = frame_data.color_target.image_view,
+        .imageLayout = c.VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
+        .loadOp = c.VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .storeOp = c.VK_ATTACHMENT_STORE_OP_STORE,
+        .clearValue = .{
+            .color = c.VkClearColorValue{ .float32 = .{1,0,0,0} }
+        },
+    });
+
+    const depth_attachment = std.mem.zeroInit(c.VkRenderingAttachmentInfo, .{
+        .sType = c.VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+        .imageView = frame_data.depth_target.image_view,
+        .imageLayout = c.VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
+        .loadOp = c.VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .storeOp = c.VK_ATTACHMENT_STORE_OP_STORE,
+        .clearValue = .{
+            .depthStencil = c.VkClearDepthStencilValue{ .depth = 0, .stencil = 0}
+        },
+    });
+
+    const pass_info = std.mem.zeroInit(c.VkRenderingInfo, .{
+        .sType = c.VK_STRUCTURE_TYPE_RENDERING_INFO,
+        .renderArea = c.VkRect2D{
+            .offset = .{ .x = 0, .y = 0 },
+            .extent = .{
+                .width = swapchain.width,
+                .height = swapchain.height
+            },
+        },
+        .layerCount = 1,
+        .colorAttachmentCount = 1,
+        .pColorAttachments = &color_attachment,
+        .pDepthAttachment = &depth_attachment,
+    });
+
+    c.vkCmdBeginRendering(command_buffer, &pass_info);
+
+    const viewport = c.VkViewport{
+        .x = 0,
+        .y = @intToFloat(f32, swapchain.height),
+        .width = @intToFloat(f32, swapchain.width),
+        .height = -@intToFloat(f32, swapchain.height),
+        .minDepth = 0,
+        .maxDepth = 1
+    };
+    const scissor = c.VkRect2D{
+        .offset = .{ .x = 0, .y = 0},
+        .extent = .{
+            .width = swapchain.width,
+            .height = swapchain.height
+        }
+    };
+
+    c.vkCmdSetViewport(command_buffer, 0, 1, &viewport);
+    c.vkCmdSetScissor(command_buffer, 0, 1, &scissor);
+
+
+    c.vkCmdEndRendering(command_buffer);
+}
+
 pub fn main() !void {
 	defer _ = general_purpose_allocator.deinit();
 
@@ -374,6 +438,8 @@ pub fn main() !void {
 		});
 
 		try VK_CHECK(c.vkBeginCommandBuffer(command_buffer, &begin_info));
+
+        renderFrame(command_buffer, swapchain, &frame_data);
 
 		c.vkCmdPipelineBarrier2(command_buffer, &std.mem.zeroInit(c.VkDependencyInfo, .{
 			.sType = c.VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
