@@ -139,17 +139,32 @@ fn createDevice(physical_device: c.VkPhysicalDevice, family_index: u32) error{Vk
 
 	const extensions = [_][*:0]const u8 {
 		c.VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+		c.VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME, // Required by VK_KHR_ray_query; allows work to be offloaded onto background threads and parallelized
+		c.VK_KHR_RAY_QUERY_EXTENSION_NAME,
+		c.VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
 	};
 
-	const features13 = std.mem.zeroInit(c.VkPhysicalDeviceVulkan13Features, .{
+	var features13 = std.mem.zeroInit(c.VkPhysicalDeviceVulkan13Features, .{
 		.sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
 		.dynamicRendering = 1,
 		.synchronization2 = 1,
 	});
 
+	var acceleration_structures_features = std.mem.zeroInit(c.VkPhysicalDeviceAccelerationStructureFeaturesKHR, .{
+		.sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR,
+		.pNext = &features13,
+		.accelerationStructure = 1,
+	});
+
+	var ray_query_features = std.mem.zeroInit(c.VkPhysicalDeviceRayQueryFeaturesKHR, .{
+		.sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR,
+		.pNext = &acceleration_structures_features,
+		.rayQuery = 1,
+	});
+
 	const create_info = std.mem.zeroInit(c.VkDeviceCreateInfo, .{
 		.sType = c.VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-		.pNext = &features13,
+		.pNext = &ray_query_features,
 		.queueCreateInfoCount = 1,
 		.pQueueCreateInfos = &queue_info,
 		.ppEnabledExtensionNames = &extensions,
