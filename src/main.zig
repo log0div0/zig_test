@@ -3,7 +3,7 @@ const builtin = @import("builtin");
 const c = @import("c.zig");
 const Swapchain = @import("swapchain.zig");
 const app = @import("app.zig");
-const sync = @import("sync.zig");
+const barrier = @import("barrier.zig");
 
 export fn glfwErrorCallback(err: c_int, description: [*c]const u8) void {
 	std.log.err("GLFW error #{}: {s}", .{err, description});
@@ -349,13 +349,9 @@ pub fn main() !void {
 
 		app.renderFrame(command_buffer, &rdd);
 
-		sync.pipelineBarrier(command_buffer, c.VK_DEPENDENCY_BY_REGION_BIT, &.{}, &[_]c.VkImageMemoryBarrier2{
-			sync.imageBarrier(rdd.color_target.image, sync.full_color,
-				c.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, c.VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-				c.VK_PIPELINE_STAGE_TRANSFER_BIT, c.VK_ACCESS_TRANSFER_READ_BIT, c.VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL),
-			sync.imageBarrier(swapchain.images[image_index], sync.full_color,
-				0, 0, c.VK_IMAGE_LAYOUT_UNDEFINED,
-				c.VK_PIPELINE_STAGE_TRANSFER_BIT, c.VK_ACCESS_TRANSFER_WRITE_BIT, c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL),
+		barrier.pipeline(command_buffer, c.VK_DEPENDENCY_BY_REGION_BIT, &.{}, &[_]c.VkImageMemoryBarrier2{
+            barrier.colorAttachmentOutput2TransferSrc(rdd.color_target.image),
+            barrier.undefined2TransferDst(swapchain.images[image_index]),
 		});
 
 		const blit_subresource = c.VkImageSubresourceLayers{
@@ -383,10 +379,8 @@ pub fn main() !void {
 			swapchain.images[image_index], c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 			1, &blit, c.VK_FILTER_NEAREST);
 
-		sync.pipelineBarrier(command_buffer, c.VK_DEPENDENCY_BY_REGION_BIT, &.{}, &[_]c.VkImageMemoryBarrier2{
-			sync.imageBarrier(swapchain.images[image_index], sync.full_color,
-				c.VK_PIPELINE_STAGE_TRANSFER_BIT, c.VK_ACCESS_TRANSFER_WRITE_BIT, c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-				0, 0, c.VK_IMAGE_LAYOUT_PRESENT_SRC_KHR),
+		barrier.pipeline(command_buffer, c.VK_DEPENDENCY_BY_REGION_BIT, &.{}, &[_]c.VkImageMemoryBarrier2{
+			barrier.transferDst2PresentSrc(swapchain.images[image_index])
 		});
 
 		try VK_CHECK(c.vkEndCommandBuffer(command_buffer));

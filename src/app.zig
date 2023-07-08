@@ -1,7 +1,7 @@
 
 const std = @import("std");
 const c = @import("c.zig");
-const sync = @import("sync.zig");
+const barrier = @import("barrier.zig");
 
 fn VK_CHECK(result: c.VkResult) !void {
 	return if (result == c.VK_SUCCESS) {} else error.VkError;
@@ -140,10 +140,8 @@ pub const ResolutionDependentData = struct{
 
 pub fn renderFrame(command_buffer: c.VkCommandBuffer, rdd: *ResolutionDependentData) void {
 
-	sync.pipelineBarrier(command_buffer, c.VK_DEPENDENCY_BY_REGION_BIT, &.{}, &[_]c.VkImageMemoryBarrier2{
-		sync.imageBarrier(rdd.color_target.image, sync.full_color,
-			0, 0, c.VK_IMAGE_LAYOUT_UNDEFINED,
-			c.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, c.VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL),
+	barrier.pipeline(command_buffer, c.VK_DEPENDENCY_BY_REGION_BIT, &.{}, &[_]c.VkImageMemoryBarrier2{
+		barrier.undefined2ColorAttachmentOutput(rdd.color_target.image),
 	});
 
 	const color_attachment = std.mem.zeroInit(c.VkRenderingAttachmentInfo, .{
