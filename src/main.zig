@@ -2,7 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const c = @import("c.zig");
 const Swapchain = @import("swapchain.zig");
-const Image = @import("resources.zig").Image;
+const app = @import("app.zig");
 const sync = @import("sync.zig");
 
 export fn glfwErrorCallback(err: c_int, description: [*c]const u8) void {
@@ -235,105 +235,6 @@ export fn keyCallback(window: ?*c.GLFWwindow, key: c_int, scancode: c_int, actio
 	}
 }
 
-const FrameData = struct{
-	const color_format = c.VK_FORMAT_R16G16B16A16_UNORM;
-	const depth_format = c.VK_FORMAT_D32_SFLOAT;
-
-	color_target: Image,
-	depth_target: Image,
-
-	fn init(
-		device: c.VkDevice,
-		memory_properties: c.VkPhysicalDeviceMemoryProperties,
-		swapchain: Swapchain,
-	) !FrameData {
-
-		const color_target = try Image.init(device, memory_properties, swapchain.width, swapchain.height, 1, color_format,
-			c.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | c.VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
-		const depth_target = try Image.init(device, memory_properties, swapchain.width, swapchain.height, 1, depth_format,
-			c.VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
-
-		return .{
-			.color_target = color_target,
-			.depth_target = depth_target,
-		};
-	}
-	fn deinit(self: *FrameData, device: c.VkDevice) void {
-		self.color_target.deinit(device);
-		self.depth_target.deinit(device);
-	}
-};
-
-fn renderFrame(command_buffer: c.VkCommandBuffer, swapchain: Swapchain, frame_data: *FrameData) void {
-
-	sync.pipelineBarrier(command_buffer, c.VK_DEPENDENCY_BY_REGION_BIT, &.{}, &[_]c.VkImageMemoryBarrier2{
-		sync.imageBarrier(frame_data.color_target.image, sync.full_color,
-			0, 0, c.VK_IMAGE_LAYOUT_UNDEFINED,
-			c.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, c.VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL),
-	});
-
-	const color_attachment = std.mem.zeroInit(c.VkRenderingAttachmentInfo, .{
-		.sType = c.VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-		.imageView = frame_data.color_target.image_view,
-		.imageLayout = c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-		.loadOp = c.VK_ATTACHMENT_LOAD_OP_CLEAR,
-		.storeOp = c.VK_ATTACHMENT_STORE_OP_STORE,
-		.clearValue = .{
-			.color = c.VkClearColorValue{ .float32 = .{0.2,0.2,0.2,0} }
-		},
-	});
-
-	const depth_attachment = std.mem.zeroInit(c.VkRenderingAttachmentInfo, .{
-		.sType = c.VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-		.imageView = frame_data.depth_target.image_view,
-		.imageLayout = c.VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-		.loadOp = c.VK_ATTACHMENT_LOAD_OP_CLEAR,
-		.storeOp = c.VK_ATTACHMENT_STORE_OP_STORE,
-		.clearValue = .{
-			.depthStencil = c.VkClearDepthStencilValue{ .depth = 0, .stencil = 0}
-		},
-	});
-
-	const pass_info = std.mem.zeroInit(c.VkRenderingInfo, .{
-		.sType = c.VK_STRUCTURE_TYPE_RENDERING_INFO,
-		.renderArea = c.VkRect2D{
-			.offset = .{ .x = 0, .y = 0 },
-			.extent = .{
-				.width = swapchain.width,
-				.height = swapchain.height
-			},
-		},
-		.layerCount = 1,
-		.colorAttachmentCount = 1,
-		.pColorAttachments = &color_attachment,
-		.pDepthAttachment = &depth_attachment,
-	});
-
-	c.vkCmdBeginRendering(command_buffer, &pass_info);
-
-	const viewport = c.VkViewport{
-		.x = 0,
-		.y = @floatFromInt(swapchain.height),
-		.width = @floatFromInt(swapchain.width),
-		.height = -@as(f32, @floatFromInt(swapchain.height)),
-		.minDepth = 0,
-		.maxDepth = 1
-	};
-	const scissor = c.VkRect2D{
-		.offset = .{ .x = 0, .y = 0},
-		.extent = .{
-			.width = swapchain.width,
-			.height = swapchain.height
-		}
-	};
-
-	c.vkCmdSetViewport(command_buffer, 0, 1, &viewport);
-	c.vkCmdSetScissor(command_buffer, 0, 1, &scissor);
-
-
-	c.vkCmdEndRendering(command_buffer);
-}
-
 pub fn main() !void {
 	defer _ = general_purpose_allocator.deinit();
 
@@ -411,8 +312,8 @@ pub fn main() !void {
 		break :blk memory_properties;
 	};
 
-	var frame_data = try FrameData.init(device, memory_properties, swapchain);
-	defer frame_data.deinit(device);
+	var rdd = try app.ResolutionDependentData.init(device, memory_properties, swapchain.width, swapchain.height);
+	defer rdd.deinit(device);
 
 	defer _ = c.vkDeviceWaitIdle(device);
 
@@ -427,8 +328,8 @@ pub fn main() !void {
 		}
 
 		if (swapchain_status == .resized) {
-			frame_data.deinit(device);
-			frame_data = try FrameData.init(device, memory_properties, swapchain);
+			rdd.deinit(device);
+			rdd = try app.ResolutionDependentData.init(device, memory_properties, swapchain.width, swapchain.height);
 		}
 
 		const image_index = blk: {
@@ -446,10 +347,10 @@ pub fn main() !void {
 
 		try VK_CHECK(c.vkBeginCommandBuffer(command_buffer, &begin_info));
 
-		renderFrame(command_buffer, swapchain, &frame_data);
+		app.renderFrame(command_buffer, &rdd);
 
 		sync.pipelineBarrier(command_buffer, c.VK_DEPENDENCY_BY_REGION_BIT, &.{}, &[_]c.VkImageMemoryBarrier2{
-			sync.imageBarrier(frame_data.color_target.image, sync.full_color,
+			sync.imageBarrier(rdd.color_target.image, sync.full_color,
 				c.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, c.VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
 				c.VK_PIPELINE_STAGE_TRANSFER_BIT, c.VK_ACCESS_TRANSFER_READ_BIT, c.VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL),
 			sync.imageBarrier(swapchain.images[image_index], sync.full_color,
@@ -464,20 +365,21 @@ pub fn main() !void {
 			.layerCount = 1,
 		};
 
-		const blit_offsets = [2]c.VkOffset3D{
-			.{ .x = 0, .y = 0, .z = 0},
-			.{ .x = @intCast(swapchain.width), .y = @intCast(swapchain.height), .z = 1},
-		};
-
 		const blit = c.VkImageBlit {
 			.srcSubresource = blit_subresource,
-			.srcOffsets = blit_offsets,
+			.srcOffsets = [2]c.VkOffset3D{
+                .{ .x = 0, .y = 0, .z = 0},
+                .{ .x = @intCast(rdd.out_width), .y = @intCast(rdd.out_height), .z = 1},
+            },
 			.dstSubresource = blit_subresource,
-			.dstOffsets = blit_offsets,
+			.dstOffsets = [2]c.VkOffset3D{
+                .{ .x = 0, .y = 0, .z = 0},
+                .{ .x = @intCast(swapchain.width), .y = @intCast(swapchain.height), .z = 1},
+            },
 		};
 
 		c.vkCmdBlitImage(command_buffer,
-			frame_data.color_target.image, c.VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+			rdd.color_target.image, c.VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 			swapchain.images[image_index], c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 			1, &blit, c.VK_FILTER_NEAREST);
 
