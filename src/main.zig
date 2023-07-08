@@ -3,6 +3,7 @@ const builtin = @import("builtin");
 const c = @import("c.zig");
 const Swapchain = @import("swapchain.zig");
 const Image = @import("resources.zig").Image;
+const sync = @import("sync.zig");
 
 export fn glfwErrorCallback(err: c_int, description: [*c]const u8) void {
 	std.log.err("GLFW error #{}: {s}", .{err, description});
@@ -66,7 +67,7 @@ fn getGraphicsFamilyIndex(device: c.VkPhysicalDevice) !u32 {
 
 	for (0..queue_count) |i| {
 		if (queues[i].queueFlags & c.VK_QUEUE_GRAPHICS_BIT != 0) {
-			return @intCast(u32, i);
+			return @intCast(i);
 		}
 	}
 
@@ -87,7 +88,7 @@ fn pickPhysicalDevice(physical_devices: []c.VkPhysicalDevice) !c.VkPhysicalDevic
 		var props: c.VkPhysicalDeviceProperties = undefined;
 		c.vkGetPhysicalDeviceProperties(device, &props);
 
-		std.log.info("GPU{}: {s}", .{i, @ptrCast([*c]const u8, &props.deviceName)});
+		std.log.info("GPU{}: {s}", .{i, @as([*c]const u8, @ptrCast(&props.deviceName))});
 
 		const family_index = try getGraphicsFamilyIndex(device);
 		if (family_index == c.VK_QUEUE_FAMILY_IGNORED) {
@@ -117,7 +118,7 @@ fn pickPhysicalDevice(physical_devices: []c.VkPhysicalDevice) !c.VkPhysicalDevic
 		var props: c.VkPhysicalDeviceProperties = undefined;
 		c.vkGetPhysicalDeviceProperties(result, &props);
 
-		std.log.info("Selected GPU {s}", .{@ptrCast([*c]const u8, &props.deviceName)});
+		std.log.info("Selected GPU {s}", .{@as([*c]const u8, @ptrCast(&props.deviceName))});
 		return result;
 	}
 	else {
@@ -265,66 +266,72 @@ const FrameData = struct{
 
 fn renderFrame(command_buffer: c.VkCommandBuffer, swapchain: Swapchain, frame_data: *FrameData) void {
 
-    const color_attachment = std.mem.zeroInit(c.VkRenderingAttachmentInfo, .{
-        .sType = c.VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-        .imageView = frame_data.color_target.image_view,
-        .imageLayout = c.VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
-        .loadOp = c.VK_ATTACHMENT_LOAD_OP_CLEAR,
-        .storeOp = c.VK_ATTACHMENT_STORE_OP_STORE,
-        .clearValue = .{
-            .color = c.VkClearColorValue{ .float32 = .{1,0,0,0} }
-        },
-    });
+	sync.pipelineBarrier(command_buffer, c.VK_DEPENDENCY_BY_REGION_BIT, &.{}, &[_]c.VkImageMemoryBarrier2{
+		sync.imageBarrier(frame_data.color_target.image, sync.full_color,
+			0, 0, c.VK_IMAGE_LAYOUT_UNDEFINED,
+			c.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, c.VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL),
+	});
 
-    const depth_attachment = std.mem.zeroInit(c.VkRenderingAttachmentInfo, .{
-        .sType = c.VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-        .imageView = frame_data.depth_target.image_view,
-        .imageLayout = c.VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
-        .loadOp = c.VK_ATTACHMENT_LOAD_OP_CLEAR,
-        .storeOp = c.VK_ATTACHMENT_STORE_OP_STORE,
-        .clearValue = .{
-            .depthStencil = c.VkClearDepthStencilValue{ .depth = 0, .stencil = 0}
-        },
-    });
+	const color_attachment = std.mem.zeroInit(c.VkRenderingAttachmentInfo, .{
+		.sType = c.VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+		.imageView = frame_data.color_target.image_view,
+		.imageLayout = c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+		.loadOp = c.VK_ATTACHMENT_LOAD_OP_CLEAR,
+		.storeOp = c.VK_ATTACHMENT_STORE_OP_STORE,
+		.clearValue = .{
+			.color = c.VkClearColorValue{ .float32 = .{0.2,0.2,0.2,0} }
+		},
+	});
 
-    const pass_info = std.mem.zeroInit(c.VkRenderingInfo, .{
-        .sType = c.VK_STRUCTURE_TYPE_RENDERING_INFO,
-        .renderArea = c.VkRect2D{
-            .offset = .{ .x = 0, .y = 0 },
-            .extent = .{
-                .width = swapchain.width,
-                .height = swapchain.height
-            },
-        },
-        .layerCount = 1,
-        .colorAttachmentCount = 1,
-        .pColorAttachments = &color_attachment,
-        .pDepthAttachment = &depth_attachment,
-    });
+	const depth_attachment = std.mem.zeroInit(c.VkRenderingAttachmentInfo, .{
+		.sType = c.VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+		.imageView = frame_data.depth_target.image_view,
+		.imageLayout = c.VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+		.loadOp = c.VK_ATTACHMENT_LOAD_OP_CLEAR,
+		.storeOp = c.VK_ATTACHMENT_STORE_OP_STORE,
+		.clearValue = .{
+			.depthStencil = c.VkClearDepthStencilValue{ .depth = 0, .stencil = 0}
+		},
+	});
 
-    c.vkCmdBeginRendering(command_buffer, &pass_info);
+	const pass_info = std.mem.zeroInit(c.VkRenderingInfo, .{
+		.sType = c.VK_STRUCTURE_TYPE_RENDERING_INFO,
+		.renderArea = c.VkRect2D{
+			.offset = .{ .x = 0, .y = 0 },
+			.extent = .{
+				.width = swapchain.width,
+				.height = swapchain.height
+			},
+		},
+		.layerCount = 1,
+		.colorAttachmentCount = 1,
+		.pColorAttachments = &color_attachment,
+		.pDepthAttachment = &depth_attachment,
+	});
 
-    const viewport = c.VkViewport{
-        .x = 0,
-        .y = @intToFloat(f32, swapchain.height),
-        .width = @intToFloat(f32, swapchain.width),
-        .height = -@intToFloat(f32, swapchain.height),
-        .minDepth = 0,
-        .maxDepth = 1
-    };
-    const scissor = c.VkRect2D{
-        .offset = .{ .x = 0, .y = 0},
-        .extent = .{
-            .width = swapchain.width,
-            .height = swapchain.height
-        }
-    };
+	c.vkCmdBeginRendering(command_buffer, &pass_info);
 
-    c.vkCmdSetViewport(command_buffer, 0, 1, &viewport);
-    c.vkCmdSetScissor(command_buffer, 0, 1, &scissor);
+	const viewport = c.VkViewport{
+		.x = 0,
+		.y = @floatFromInt(swapchain.height),
+		.width = @floatFromInt(swapchain.width),
+		.height = -@as(f32, @floatFromInt(swapchain.height)),
+		.minDepth = 0,
+		.maxDepth = 1
+	};
+	const scissor = c.VkRect2D{
+		.offset = .{ .x = 0, .y = 0},
+		.extent = .{
+			.width = swapchain.width,
+			.height = swapchain.height
+		}
+	};
+
+	c.vkCmdSetViewport(command_buffer, 0, 1, &viewport);
+	c.vkCmdSetScissor(command_buffer, 0, 1, &scissor);
 
 
-    c.vkCmdEndRendering(command_buffer);
+	c.vkCmdEndRendering(command_buffer);
 }
 
 pub fn main() !void {
@@ -439,29 +446,46 @@ pub fn main() !void {
 
 		try VK_CHECK(c.vkBeginCommandBuffer(command_buffer, &begin_info));
 
-        renderFrame(command_buffer, swapchain, &frame_data);
+		renderFrame(command_buffer, swapchain, &frame_data);
 
-		c.vkCmdPipelineBarrier2(command_buffer, &std.mem.zeroInit(c.VkDependencyInfo, .{
-			.sType = c.VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-			.imageMemoryBarrierCount = 1,
-			.pImageMemoryBarriers = &std.mem.zeroInit(c.VkImageMemoryBarrier2, .{
-				.sType = c.VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-				.srcStageMask = c.VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-				.srcAccessMask = 0,
-				.dstStageMask = c.VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-				.dstAccessMask = 0,
-				.oldLayout = c.VK_IMAGE_LAYOUT_UNDEFINED,
-				.newLayout = c.VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-				.image = swapchain.images[image_index],
-				.subresourceRange = c.VkImageSubresourceRange {
-					.aspectMask = c.VK_IMAGE_ASPECT_COLOR_BIT,
-					.baseMipLevel = 0,
-					.levelCount = c.VK_REMAINING_MIP_LEVELS,
-					.baseArrayLayer = 0,
-					.layerCount = c.VK_REMAINING_ARRAY_LAYERS,
-				},
-			}),
-		}));
+		sync.pipelineBarrier(command_buffer, c.VK_DEPENDENCY_BY_REGION_BIT, &.{}, &[_]c.VkImageMemoryBarrier2{
+			sync.imageBarrier(frame_data.color_target.image, sync.full_color,
+				c.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, c.VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+				c.VK_PIPELINE_STAGE_TRANSFER_BIT, c.VK_ACCESS_TRANSFER_READ_BIT, c.VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL),
+			sync.imageBarrier(swapchain.images[image_index], sync.full_color,
+				0, 0, c.VK_IMAGE_LAYOUT_UNDEFINED,
+				c.VK_PIPELINE_STAGE_TRANSFER_BIT, c.VK_ACCESS_TRANSFER_WRITE_BIT, c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL),
+		});
+
+		const blit_subresource = c.VkImageSubresourceLayers{
+			.aspectMask = c.VK_IMAGE_ASPECT_COLOR_BIT,
+			.mipLevel = 0,
+			.baseArrayLayer = 0,
+			.layerCount = 1,
+		};
+
+		const blit_offsets = [2]c.VkOffset3D{
+			.{ .x = 0, .y = 0, .z = 0},
+			.{ .x = @intCast(swapchain.width), .y = @intCast(swapchain.height), .z = 1},
+		};
+
+		const blit = c.VkImageBlit {
+			.srcSubresource = blit_subresource,
+			.srcOffsets = blit_offsets,
+			.dstSubresource = blit_subresource,
+			.dstOffsets = blit_offsets,
+		};
+
+		c.vkCmdBlitImage(command_buffer,
+			frame_data.color_target.image, c.VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+			swapchain.images[image_index], c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			1, &blit, c.VK_FILTER_NEAREST);
+
+		sync.pipelineBarrier(command_buffer, c.VK_DEPENDENCY_BY_REGION_BIT, &.{}, &[_]c.VkImageMemoryBarrier2{
+			sync.imageBarrier(swapchain.images[image_index], sync.full_color,
+				c.VK_PIPELINE_STAGE_TRANSFER_BIT, c.VK_ACCESS_TRANSFER_WRITE_BIT, c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+				0, 0, c.VK_IMAGE_LAYOUT_PRESENT_SRC_KHR),
+		});
 
 		try VK_CHECK(c.vkEndCommandBuffer(command_buffer));
 

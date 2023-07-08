@@ -9,9 +9,9 @@ fn VK_CHECK(result: c.VkResult) !void {
 fn selectMemoryType(memory_properties: c.VkPhysicalDeviceMemoryProperties, memory_type_bits: u32, flags: c.VkMemoryPropertyFlags) !u32
 {
 	for (0..memory_properties.memoryTypeCount) |i| {
-		const bit = @as(u32, 1) << @intCast(std.math.Log2Int(u32), i);
+		const bit = @as(u32, 1) << @intCast(i);
 		if ((memory_type_bits & bit) != 0 and (memory_properties.memoryTypes[i].propertyFlags & flags) == flags)
-			return @intCast(u32, i);
+			return @intCast(i);
 	}
 
 	return error.NoCompatibleMemoryTypeFound;
