@@ -2,6 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const c = @import("c.zig");
 const Swapchain = @import("swapchain.zig");
+const ShaderCompiler = @import("shader_compiler.zig");
 const app = @import("app.zig");
 const barrier = @import("barrier.zig");
 
@@ -251,7 +252,7 @@ export fn keyCallback(window: ?*c.GLFWwindow, key: c_int, scancode: c_int, actio
 }
 
 pub fn main() !void {
-	defer _ = general_purpose_allocator.deinit();
+	defer std.debug.assert(general_purpose_allocator.deinit() == .ok);
 
 	_ = c.glfwSetErrorCallback(glfwErrorCallback);
 
@@ -329,6 +330,12 @@ pub fn main() !void {
 
 	var rdd = try app.ResolutionDependentData.init(device, memory_properties, swapchain.width, swapchain.height);
 	defer rdd.deinit(device);
+
+	var shader_compiler = ShaderCompiler.init();
+	defer shader_compiler.deinit();
+
+	var triangle_vs = try shader_compiler.load(device, "triangle.vert.glsl");
+	defer triangle_vs.deinit(device);
 
 	defer _ = c.vkDeviceWaitIdle(device);
 

@@ -38,6 +38,7 @@ fn linkEverything(b: *std.Build, module: *std.Build.Step.Compile) !void
         module.addIncludePath(try std.fmt.bufPrint(&tmp, "{s}\\Include", .{vulkan_path}));
         module.addLibraryPath(try std.fmt.bufPrint(&tmp, "{s}\\Lib", .{vulkan_path}));
         module.linkSystemLibrary("vulkan-1");
+        module.linkSystemLibrary("shaderc_shared");
     } else {
         return error.VulkanEnvVarIsNotSet;
     }

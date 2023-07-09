@@ -6,4 +6,6 @@ pub usingnamespace @cImport({
 
 	@cDefine("VK_USE_PLATFORM_WIN32_KHR", {});
 	@cInclude("vulkan/vulkan.h");
+
+	@cInclude("shaderc/shaderc.h");
 });
