@@ -1,12 +1,9 @@
 const std = @import("std");
 const c = @import("c.zig");
 
-const Shader = struct {
-	pub fn deinit(self: *Shader, device: c.VkDevice) void {
-		_ = self;
-		_ = device;
-	}
-};
+fn VK_CHECK(result: c.VkResult) !void {
+	return if (result == c.VK_SUCCESS) {} else error.VkError;
+}
 
 gpa: std.heap.GeneralPurposeAllocator(.{}) = .{},
 temp_buf: []u8 = undefined,
@@ -24,7 +21,7 @@ pub fn deinit(self: *@This()) void {
 	std.debug.assert(self.gpa.deinit() == .ok);
 }
 
-pub fn load(self: *@This(), device: c.VkDevice, name: []const u8) !Shader {
+pub fn load(self: *@This(), device: c.VkDevice, comptime name: []const u8) !c.VkShaderModule {
 	if (std.os.argv.len != 2) {
 		std.log.err("Usage: zig build run -- /project/dir", .{});
 		return error.InvalidCmdLineArguments;
@@ -34,8 +31,6 @@ pub fn load(self: *@This(), device: c.VkDevice, name: []const u8) !Shader {
 
 	var tmp = [_]u8{undefined} ** 200;
     const shader_path = try std.fmt.bufPrint(&tmp, "{s}\\shaders\\{s}", .{project_dir, name});
-
-    _ = device;
 
 	var file = try std.fs.cwd().openFile(shader_path, .{ .mode = .read_only });
 	defer file.close();
@@ -52,11 +47,18 @@ pub fn load(self: *@This(), device: c.VkDevice, name: []const u8) !Shader {
 
 	const options = c.shaderc_compile_options_initialize();
 	defer c.shaderc_compile_options_release(options);
+
 	c.shaderc_compile_options_set_warnings_as_errors(options);
+	// put more options here
+
+	const shader_kind: c.shaderc_shader_kind = comptime
+		if (std.mem.indexOf(u8, name, ".vert.") != null) c.shaderc_glsl_vertex_shader
+		else if (std.mem.indexOf(u8, name, ".frag.") != null) c.shaderc_glsl_fragment_shader
+		else @panic("invalid shader extension");
 
 	const result = c.shaderc_compile_into_spv(
 		self.handle, self.temp_buf.ptr, file_size,
-		c.shaderc_glsl_vertex_shader, name.ptr, "main", options);
+		shader_kind, name.ptr, "main", options);
 	defer c.shaderc_result_release(result);
 
 	const status = c.shaderc_result_get_compilation_status(result);
@@ -66,8 +68,15 @@ pub fn load(self: *@This(), device: c.VkDevice, name: []const u8) !Shader {
 		return error.ShaderCompilationError;
 	}
 
-	// c.shaderc_result_get_length();
-	// c.shaderc_result_get_bytes();
+	const create_info = c.VkShaderModuleCreateInfo{
+		.sType = c.VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+		.pNext = null,
+		.flags = 0,
+		.codeSize = c.shaderc_result_get_length(result),
+		.pCode = @ptrCast(@alignCast(c.shaderc_result_get_bytes(result))),
+	};
 
-    return .{};
+	var shader_module: c.VkShaderModule = null;
+	try VK_CHECK(c.vkCreateShaderModule(device, &create_info, 0, &shader_module));
+    return shader_module;
 }

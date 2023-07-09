@@ -105,8 +105,8 @@ pub const Image = struct{
 };
 
 pub const ResolutionDependentData = struct{
-	const color_format = c.VK_FORMAT_R16G16B16A16_UNORM;
-	const depth_format = c.VK_FORMAT_D32_SFLOAT;
+	pub const color_format = c.VK_FORMAT_R16G16B16A16_UNORM;
+	pub const depth_format = c.VK_FORMAT_D32_SFLOAT;
 
 	color_target: Image,
 	depth_target: Image,
@@ -138,7 +138,7 @@ pub const ResolutionDependentData = struct{
 	}
 };
 
-pub fn renderFrame(command_buffer: c.VkCommandBuffer, rdd: *ResolutionDependentData) void {
+pub fn renderFrame(command_buffer: c.VkCommandBuffer, rdd: *ResolutionDependentData, graphics_pipeline: c.VkPipeline) void {
 
 	barrier.pipeline(command_buffer, c.VK_DEPENDENCY_BY_REGION_BIT, &.{}, &[_]c.VkImageMemoryBarrier2{
 		barrier.undefined2ColorAttachmentOutput(rdd.color_target.image),
@@ -151,7 +151,7 @@ pub fn renderFrame(command_buffer: c.VkCommandBuffer, rdd: *ResolutionDependentD
 		.loadOp = c.VK_ATTACHMENT_LOAD_OP_CLEAR,
 		.storeOp = c.VK_ATTACHMENT_STORE_OP_STORE,
 		.clearValue = .{
-			.color = c.VkClearColorValue{ .float32 = .{0.2,0.2,0.2,0} }
+			.color = c.VkClearColorValue{ .float32 = .{0.5,0.5,0.5,0} }
 		},
 	});
 
@@ -202,6 +202,8 @@ pub fn renderFrame(command_buffer: c.VkCommandBuffer, rdd: *ResolutionDependentD
 	c.vkCmdSetViewport(command_buffer, 0, 1, &viewport);
 	c.vkCmdSetScissor(command_buffer, 0, 1, &scissor);
 
+	c.vkCmdBindPipeline(command_buffer, c.VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline);
+	c.vkCmdDraw(command_buffer, 3, 1, 0, 0);
 
 	c.vkCmdEndRendering(command_buffer);
 }
