@@ -54,6 +54,7 @@ pub fn load(self: *@This(), device: c.VkDevice, comptime name: []const u8) !c.Vk
 	const shader_kind: c.shaderc_shader_kind = comptime
 		if (std.mem.indexOf(u8, name, ".vert.") != null) c.shaderc_glsl_vertex_shader
 		else if (std.mem.indexOf(u8, name, ".frag.") != null) c.shaderc_glsl_fragment_shader
+		else if (std.mem.indexOf(u8, name, ".comp.") != null) c.shaderc_glsl_compute_shader
 		else @panic("invalid shader extension");
 
 	const result = c.shaderc_compile_into_spv(
