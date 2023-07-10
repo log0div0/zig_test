@@ -251,17 +251,6 @@ export fn keyCallback(window: ?*c.GLFWwindow, key: c_int, scancode: c_int, actio
 	}
 }
 
-fn createPipelineLayout(device: c.VkDevice) !c.VkPipelineLayout
-{
-	const create_info = std.mem.zeroInit(c.VkPipelineLayoutCreateInfo, .{
-		.sType = c.VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-	});
-
-	var result: c.VkPipelineLayout = null;
-	try VK_CHECK(c.vkCreatePipelineLayout(device, &create_info, null, &result));
-	return result;
-}
-
 pub fn main() !void {
 	defer std.debug.assert(general_purpose_allocator.deinit() == .ok);
 
@@ -333,19 +322,7 @@ pub fn main() !void {
 	var swapchain = try Swapchain.init(physical_device, device, surface, family_index, surface_format, null);
 	defer swapchain.deinit(device);
 
-	const memory_properties = blk: {
-		var memory_properties: c.VkPhysicalDeviceMemoryProperties = undefined;
-		c.vkGetPhysicalDeviceMemoryProperties(physical_device, &memory_properties);
-		break :blk memory_properties;
-	};
-
-	const pipeline_layout = try createPipelineLayout(device);
-	defer c.vkDestroyPipelineLayout(device, pipeline_layout, null);
-
-	var shader_compiler = ShaderCompiler.init();
-	defer shader_compiler.deinit();
-
-	var app = try App.init(device, swapchain.width, swapchain.height, &shader_compiler, pipeline_layout, memory_properties);
+	var app = try App.init(physical_device, device, swapchain.width, swapchain.height);
 	defer app.deinit(device);
 
 	defer _ = c.vkDeviceWaitIdle(device);
@@ -361,8 +338,8 @@ pub fn main() !void {
 		}
 
 		if (swapchain_status == .resized) {
-			app.deinit(device);
-			app = try App.init(device, swapchain.width, swapchain.height, &shader_compiler, pipeline_layout, memory_properties);
+			app.deinitResolutionDependentResources(device);
+			try app.initResolutionDependentResources(device, swapchain.width, swapchain.height);
 		}
 
 		const image_index = blk: {

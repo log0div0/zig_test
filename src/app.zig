@@ -105,176 +105,89 @@ pub const Image = struct{
 	}
 };
 
-fn createGraphicsPipeline(
-	device: c.VkDevice,
-	vs: c.VkShaderModule,
-	fs: c.VkShaderModule,
-	pipeline_layout: c.VkPipelineLayout,
-	a_color_format: c.VkFormat,
-	a_depth_format: c.VkFormat) !c.VkPipeline
-{
-	const stages = [_]c.VkPipelineShaderStageCreateInfo{
-		.{
-			.sType = c.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-			.pNext = null,
-			.flags = 0,
-			.stage = c.VK_SHADER_STAGE_VERTEX_BIT,
-			.module = vs,
-			.pName = "main",
-			.pSpecializationInfo = null, // TODO!!!!!!!!!!!!!
-		},
-		.{
-			.sType = c.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-			.pNext = null,
-			.flags = 0,
-			.stage = c.VK_SHADER_STAGE_FRAGMENT_BIT,
-			.module = fs,
-			.pName = "main",
-			.pSpecializationInfo = null, // TODO!!!!!!!!!!!!!
-		},
-	};
-
-	const vertex_input = std.mem.zeroInit(c.VkPipelineVertexInputStateCreateInfo, .{
-		.sType = c.VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-	});
-
-	const input_assembly = std.mem.zeroInit(c.VkPipelineInputAssemblyStateCreateInfo, .{
-		.sType = c.VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-		.topology = c.VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-	});
-
-	const viewport_state = std.mem.zeroInit(c.VkPipelineViewportStateCreateInfo, .{
-		.sType = c.VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
-		.viewportCount = 1,
-		.scissorCount = 1,
-	});
-
-	const rasterization_state = std.mem.zeroInit(c.VkPipelineRasterizationStateCreateInfo, .{
-		.sType = c.VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
-		.lineWidth = 1,
-		.frontFace = c.VK_FRONT_FACE_CLOCKWISE,
-		.cullMode = c.VK_CULL_MODE_BACK_BIT,
-	});
-
-	const multisample_state = std.mem.zeroInit(c.VkPipelineMultisampleStateCreateInfo, .{
-		.sType = c.VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-		.rasterizationSamples = c.VK_SAMPLE_COUNT_1_BIT,
-	});
-
-	const depth_stencil_state = std.mem.zeroInit(c.VkPipelineDepthStencilStateCreateInfo, .{
-		.sType = c.VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-		.depthTestEnable = 1,
-		.depthWriteEnable = 1,
-		.depthCompareOp = c.VK_COMPARE_OP_GREATER,
-	});
-
-	const color_attachment_state = std.mem.zeroInit(c.VkPipelineColorBlendAttachmentState, .{
-		.colorWriteMask = c.VK_COLOR_COMPONENT_R_BIT | c.VK_COLOR_COMPONENT_G_BIT | c.VK_COLOR_COMPONENT_B_BIT | c.VK_COLOR_COMPONENT_A_BIT,
-	});
-
-	const color_blend_state = std.mem.zeroInit(c.VkPipelineColorBlendStateCreateInfo, .{
-		.sType = c.VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-		.attachmentCount = 1,
-		.pAttachments = &color_attachment_state,
-	});
-
-	const dynamic_states = [_]c.VkDynamicState{ c.VK_DYNAMIC_STATE_VIEWPORT, c.VK_DYNAMIC_STATE_SCISSOR };
-
-	const dynamic_state = std.mem.zeroInit(c.VkPipelineDynamicStateCreateInfo, .{
-		.sType = c.VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
-		.dynamicStateCount = dynamic_states.len,
-		.pDynamicStates = &dynamic_states,
-	});
-
-	const rendering_info = std.mem.zeroInit(c.VkPipelineRenderingCreateInfo, .{
-		.sType = c.VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
-		.colorAttachmentCount = 1,
-		.pColorAttachmentFormats = &a_color_format,
-		.depthAttachmentFormat = a_depth_format,
-	});
-
-	const create_info = std.mem.zeroInit(c.VkGraphicsPipelineCreateInfo, .{
-		.sType = c.VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
-		.pNext = &rendering_info,
-		.stageCount = stages.len,
-		.pStages = &stages,
-		.pVertexInputState = &vertex_input,
-		.pInputAssemblyState = &input_assembly,
-		.pViewportState = &viewport_state,
-		.pRasterizationState = &rasterization_state,
-		.pMultisampleState = &multisample_state,
-		.pDepthStencilState = &depth_stencil_state,
-		.pColorBlendState = &color_blend_state,
-		.pDynamicState = &dynamic_state,
-		.layout = pipeline_layout,
-	});
-
-	const pipeline_cache: c.VkPipelineCache = null; // TODO!!!!!!!!
-
-	var pipeline: c.VkPipeline = null;
-	try VK_CHECK(c.vkCreateGraphicsPipelines(device, pipeline_cache, 1, &create_info, null, &pipeline));
-	return pipeline;
-}
-
-pub const color_format = c.VK_FORMAT_R16G16B16A16_UNORM;
-pub const depth_format = c.VK_FORMAT_D32_SFLOAT;
+pub const color_format: c.VkFormat = c.VK_FORMAT_R16G16B16A16_UNORM;
+pub const depth_format: c.VkFormat = c.VK_FORMAT_D32_SFLOAT;
 
 color_target: Image,
 depth_target: Image,
 out_width: u32,
 out_height: u32,
+
+shader_compiler: ShaderCompiler,
+pipeline_layout: c.VkPipelineLayout,
+memory_properties: c.VkPhysicalDeviceMemoryProperties,
+
 triangle_vs: c.VkShaderModule,
 triangle_fs: c.VkShaderModule,
-graphics_pipeline: c.VkPipeline,
+triangle_pipeline: c.VkPipeline,
 raytrace_cs: c.VkShaderModule,
-compute_pipeline: c.VkPipeline,
+raytrace_pipeline: c.VkPipeline,
 
-pub fn init(
-	device: c.VkDevice,
-	out_width: u32,
-	out_height: u32,
+pub fn init(physical_device: c.VkPhysicalDevice, device: c.VkDevice, out_width: u32, out_height: u32,) !@This() {
+	var result: @This() = undefined;
 
-	// TODO combine to a single structure:
-	shader_compiler: *ShaderCompiler,
-	pipeline_layout: c.VkPipelineLayout,
-	memory_properties: c.VkPhysicalDeviceMemoryProperties,
-) !@This() {
+	c.vkGetPhysicalDeviceMemoryProperties(physical_device, &result.memory_properties);
 
-	const color_target = try Image.init(device, memory_properties, out_width, out_height, 1, color_format,
-		c.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | c.VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
-	const depth_target = try Image.init(device, memory_properties, out_width, out_height, 1, depth_format,
-		c.VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
+	result.pipeline_layout = try createPipelineLayout(device);
+	errdefer c.vkDestroyPipelineLayout(device, result.pipeline_layout, null);
 
+	result.shader_compiler = ShaderCompiler.init();
+	errdefer result.shader_compiler.deinit();
 
-	const triangle_vs = try shader_compiler.load(device, "triangle.vert.glsl");
-	const triangle_fs = try shader_compiler.load(device, "triangle.frag.glsl");
+	try result.initResolutionDependentResources(device, out_width, out_height);
+	errdefer result.deinitResolutionDependentResources(device);
 
-	const graphics_pipeline = try createGraphicsPipeline(device,
-		triangle_vs, triangle_fs,
-		pipeline_layout,
-		color_format, depth_format);
+	try result.initPipelines(device);
+	errdefer result.deinitPipelines(device);
 
-	const raytrace_cs = try shader_compiler.load(device, "raytrace.comp.glsl");
-
-	return .{
-		.color_target = color_target,
-		.depth_target = depth_target,
-		.out_width = out_width,
-		.out_height = out_height,
-		.triangle_vs = triangle_vs,
-		.triangle_fs = triangle_fs,
-		.graphics_pipeline = graphics_pipeline,
-		.raytrace_cs = raytrace_cs,
-		.compute_pipeline = null,
-	};
+	return result;
 }
+
 pub fn deinit(self: *@This(), device: c.VkDevice) void {
-	c.vkDestroyShaderModule(device, self.triangle_vs, null);
-	c.vkDestroyShaderModule(device, self.triangle_fs, null);
-	c.vkDestroyPipeline(device, self.graphics_pipeline, null);
-	c.vkDestroyShaderModule(device, self.raytrace_cs, null);
+	self.deinitResolutionDependentResources(device);
+	self.deinitPipelines(device);
+
+	c.vkDestroyPipelineLayout(device, self.pipeline_layout, null);
+	self.shader_compiler.deinit();
+}
+
+pub fn initResolutionDependentResources(self: *@This(), device: c.VkDevice, out_width: u32, out_height: u32) !void {
+
+	self.out_width = out_width;
+	self.out_height = out_height;
+
+	self.color_target = try Image.init(device, self.memory_properties, out_width, out_height, 1, color_format,
+		c.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | c.VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+	errdefer self.color_target.deinit(device);
+
+	self.depth_target = try Image.init(device, self.memory_properties, out_width, out_height, 1, depth_format,
+		c.VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
+	errdefer self.depth_target.deinit(device);
+}
+
+pub fn deinitResolutionDependentResources(self: *@This(), device: c.VkDevice) void {
 	self.color_target.deinit(device);
 	self.depth_target.deinit(device);
+}
+
+pub fn initPipelines(self: *@This(), device: c.VkDevice) !void {
+	self.triangle_vs = try self.shader_compiler.load(device, "triangle.vert.glsl");
+	errdefer c.vkDestroyShaderModule(device, self.triangle_vs, null);
+	self.triangle_fs = try self.shader_compiler.load(device, "triangle.frag.glsl");
+	errdefer c.vkDestroyShaderModule(device, self.triangle_fs, null);
+	self.triangle_pipeline = try self.createTrianglePipeline(device);
+	errdefer c.vkDestroyPipeline(device, self.triangle_pipeline, null);
+
+	self.raytrace_cs = try self.shader_compiler.load(device, "raytrace.comp.glsl");
+	errdefer c.vkDestroyShaderModule(device, self.raytrace_cs, null);
+}
+
+pub fn deinitPipelines(self: *@This(), device: c.VkDevice) void {
+	c.vkDestroyShaderModule(device, self.triangle_vs, null);
+	c.vkDestroyShaderModule(device, self.triangle_fs, null);
+	c.vkDestroyPipeline(device, self.triangle_pipeline, null);
+
+	c.vkDestroyShaderModule(device, self.raytrace_cs, null);
 }
 
 pub fn renderFrame(self: *@This(), command_buffer: c.VkCommandBuffer) void {
@@ -341,8 +254,124 @@ pub fn renderFrame(self: *@This(), command_buffer: c.VkCommandBuffer) void {
 	c.vkCmdSetViewport(command_buffer, 0, 1, &viewport);
 	c.vkCmdSetScissor(command_buffer, 0, 1, &scissor);
 
-	c.vkCmdBindPipeline(command_buffer, c.VK_PIPELINE_BIND_POINT_GRAPHICS, self.graphics_pipeline);
+	c.vkCmdBindPipeline(command_buffer, c.VK_PIPELINE_BIND_POINT_GRAPHICS, self.triangle_pipeline);
 	c.vkCmdDraw(command_buffer, 3, 1, 0, 0);
 
 	c.vkCmdEndRendering(command_buffer);
+}
+
+fn createPipelineLayout(device: c.VkDevice) !c.VkPipelineLayout
+{
+	const create_info = std.mem.zeroInit(c.VkPipelineLayoutCreateInfo, .{
+		.sType = c.VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+	});
+
+	var result: c.VkPipelineLayout = null;
+	try VK_CHECK(c.vkCreatePipelineLayout(device, &create_info, null, &result));
+	return result;
+}
+
+fn createTrianglePipeline(self: *@This(), device: c.VkDevice) !c.VkPipeline
+{
+	const stages = [_]c.VkPipelineShaderStageCreateInfo{
+		.{
+			.sType = c.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+			.pNext = null,
+			.flags = 0,
+			.stage = c.VK_SHADER_STAGE_VERTEX_BIT,
+			.module = self.triangle_vs,
+			.pName = "main",
+			.pSpecializationInfo = null, // TODO!!!!!!!!!!!!!
+		},
+		.{
+			.sType = c.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+			.pNext = null,
+			.flags = 0,
+			.stage = c.VK_SHADER_STAGE_FRAGMENT_BIT,
+			.module = self.triangle_fs,
+			.pName = "main",
+			.pSpecializationInfo = null, // TODO!!!!!!!!!!!!!
+		},
+	};
+
+	const vertex_input = std.mem.zeroInit(c.VkPipelineVertexInputStateCreateInfo, .{
+		.sType = c.VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+	});
+
+	const input_assembly = std.mem.zeroInit(c.VkPipelineInputAssemblyStateCreateInfo, .{
+		.sType = c.VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+		.topology = c.VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+	});
+
+	const viewport_state = std.mem.zeroInit(c.VkPipelineViewportStateCreateInfo, .{
+		.sType = c.VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+		.viewportCount = 1,
+		.scissorCount = 1,
+	});
+
+	const rasterization_state = std.mem.zeroInit(c.VkPipelineRasterizationStateCreateInfo, .{
+		.sType = c.VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+		.lineWidth = 1,
+		.frontFace = c.VK_FRONT_FACE_CLOCKWISE,
+		.cullMode = c.VK_CULL_MODE_BACK_BIT,
+	});
+
+	const multisample_state = std.mem.zeroInit(c.VkPipelineMultisampleStateCreateInfo, .{
+		.sType = c.VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+		.rasterizationSamples = c.VK_SAMPLE_COUNT_1_BIT,
+	});
+
+	const depth_stencil_state = std.mem.zeroInit(c.VkPipelineDepthStencilStateCreateInfo, .{
+		.sType = c.VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+		.depthTestEnable = 1,
+		.depthWriteEnable = 1,
+		.depthCompareOp = c.VK_COMPARE_OP_GREATER,
+	});
+
+	const color_attachment_state = std.mem.zeroInit(c.VkPipelineColorBlendAttachmentState, .{
+		.colorWriteMask = c.VK_COLOR_COMPONENT_R_BIT | c.VK_COLOR_COMPONENT_G_BIT | c.VK_COLOR_COMPONENT_B_BIT | c.VK_COLOR_COMPONENT_A_BIT,
+	});
+
+	const color_blend_state = std.mem.zeroInit(c.VkPipelineColorBlendStateCreateInfo, .{
+		.sType = c.VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+		.attachmentCount = 1,
+		.pAttachments = &color_attachment_state,
+	});
+
+	const dynamic_states = [_]c.VkDynamicState{ c.VK_DYNAMIC_STATE_VIEWPORT, c.VK_DYNAMIC_STATE_SCISSOR };
+
+	const dynamic_state = std.mem.zeroInit(c.VkPipelineDynamicStateCreateInfo, .{
+		.sType = c.VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+		.dynamicStateCount = dynamic_states.len,
+		.pDynamicStates = &dynamic_states,
+	});
+
+	const rendering_info = std.mem.zeroInit(c.VkPipelineRenderingCreateInfo, .{
+		.sType = c.VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+		.colorAttachmentCount = 1,
+		.pColorAttachmentFormats = &color_format,
+		.depthAttachmentFormat = depth_format,
+	});
+
+	const create_info = std.mem.zeroInit(c.VkGraphicsPipelineCreateInfo, .{
+		.sType = c.VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+		.pNext = &rendering_info,
+		.stageCount = stages.len,
+		.pStages = &stages,
+		.pVertexInputState = &vertex_input,
+		.pInputAssemblyState = &input_assembly,
+		.pViewportState = &viewport_state,
+		.pRasterizationState = &rasterization_state,
+		.pMultisampleState = &multisample_state,
+		.pDepthStencilState = &depth_stencil_state,
+		.pColorBlendState = &color_blend_state,
+		.pDynamicState = &dynamic_state,
+		.layout = self.pipeline_layout,
+	});
+
+	const pipeline_cache: c.VkPipelineCache = null; // TODO!!!!!!!!
+
+	var pipeline: c.VkPipeline = null;
+	try VK_CHECK(c.vkCreateGraphicsPipelines(device, pipeline_cache, 1, &create_info, null, &pipeline));
+	return pipeline;
 }
