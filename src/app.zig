@@ -176,6 +176,8 @@ pub fn initPipelines(self: *@This(), device: c.VkDevice) !void {
 
 	self.raytrace_cs = try self.shader_compiler.load(device, "raytrace.comp.glsl");
 	errdefer c.vkDestroyShaderModule(device, self.raytrace_cs, null);
+	self.raytrace_pipeline = try self.createRaytracePipeline(device);
+	errdefer c.vkDestroyPipeline(device, self.raytrace_pipeline, null);
 }
 
 pub fn deinitPipelines(self: *@This(), device: c.VkDevice) void {
@@ -184,6 +186,7 @@ pub fn deinitPipelines(self: *@This(), device: c.VkDevice) void {
 	c.vkDestroyPipeline(device, self.triangle_pipeline, null);
 
 	c.vkDestroyShaderModule(device, self.raytrace_cs, null);
+	c.vkDestroyPipeline(device, self.raytrace_pipeline, null);
 }
 
 pub fn renderFrame(self: *@This(), command_buffer: c.VkCommandBuffer) void {
@@ -254,6 +257,9 @@ pub fn renderFrame(self: *@This(), command_buffer: c.VkCommandBuffer) void {
 	c.vkCmdDraw(command_buffer, 3, 1, 0, 0);
 
 	c.vkCmdEndRendering(command_buffer);
+
+	c.vkCmdBindPipeline(command_buffer, c.VK_PIPELINE_BIND_POINT_COMPUTE, self.raytrace_pipeline);
+	c.vkCmdDispatch(command_buffer, 2, 3, 4);
 }
 
 fn createPipelineLayout(device: c.VkDevice) !c.VkPipelineLayout
@@ -369,5 +375,28 @@ fn createTrianglePipeline(self: *@This(), device: c.VkDevice) !c.VkPipeline
 
 	var pipeline: c.VkPipeline = null;
 	try VK_CHECK(c.vkCreateGraphicsPipelines(device, pipeline_cache, 1, &create_info, null, &pipeline));
+	return pipeline;
+}
+
+fn createRaytracePipeline(self: *@This(), device: c.VkDevice) !c.VkPipeline
+{
+	const stage = std.mem.zeroInit(c.VkPipelineShaderStageCreateInfo, .{
+		.sType = c.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+		.stage = c.VK_SHADER_STAGE_COMPUTE_BIT,
+		.module = self.raytrace_cs,
+		.pName = "main",
+		.pSpecializationInfo = null, // TODO!!!!!!!
+	});
+
+	const create_info = std.mem.zeroInit(c.VkComputePipelineCreateInfo, .{
+		.sType = c.VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+		.stage = stage,
+		.layout = self.pipeline_layout,
+	});
+
+	const pipeline_cache: c.VkPipelineCache = null; // TODO!!!!!!!!
+
+	var pipeline: c.VkPipeline = null;
+	try VK_CHECK(c.vkCreateComputePipelines(device, pipeline_cache, 1, &create_info, null, &pipeline));
 	return pipeline;
 }
