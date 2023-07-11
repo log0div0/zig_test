@@ -19,29 +19,6 @@ fn selectMemoryType(memory_properties: c.VkPhysicalDeviceMemoryProperties, memor
 	return error.NoCompatibleMemoryTypeFound;
 }
 
-fn createImageView(device: c.VkDevice, image: c.VkImage, format: c.VkFormat, base_mip_level: u32, level_count: u32) !c.VkImageView
-{
-	const aspect_mask: c.VkImageAspectFlags = if(format == c.VK_FORMAT_D32_SFLOAT) c.VK_IMAGE_ASPECT_DEPTH_BIT else c.VK_IMAGE_ASPECT_COLOR_BIT;
-
-	const create_info = std.mem.zeroInit(c.VkImageViewCreateInfo, .{
-		.sType = c.VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-		.image = image,
-		.viewType = c.VK_IMAGE_VIEW_TYPE_2D,
-		.format = format,
-		.subresourceRange = .{
-			.aspectMask = aspect_mask,
-			.baseMipLevel = base_mip_level,
-			.levelCount = level_count,
-			.baseArrayLayer = 0,
-			.layerCount = 1,
-		},
-	});
-
-	var view: c.VkImageView = null;
-	try VK_CHECK(c.vkCreateImageView(device, &create_info, 0, &view));
-	return view;
-}
-
 pub const Image = struct{
 	memory: c.VkDeviceMemory,
 	image: c.VkImage,
@@ -57,7 +34,7 @@ pub const Image = struct{
 		usage: c.VkImageUsageFlags) !Image
 	{
 
-		const create_info = std.mem.zeroInit(c.VkImageCreateInfo, .{
+		const image_info = std.mem.zeroInit(c.VkImageCreateInfo, .{
 			.sType = c.VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
 			.imageType = c.VK_IMAGE_TYPE_2D,
 			.format = format,
@@ -72,7 +49,7 @@ pub const Image = struct{
 
 
 		var image: c.VkImage = null;
-		try VK_CHECK(c.vkCreateImage(device, &create_info, null, &image));
+		try VK_CHECK(c.vkCreateImage(device, &image_info, null, &image));
 
 		var memory_requirements: c.VkMemoryRequirements = undefined;
 		c.vkGetImageMemoryRequirements(device, image, &memory_requirements);
@@ -91,9 +68,28 @@ pub const Image = struct{
 
 		try VK_CHECK(c.vkBindImageMemory(device, image, memory, 0));
 
+		const aspect_mask: c.VkImageAspectFlags = if(format == c.VK_FORMAT_D32_SFLOAT) c.VK_IMAGE_ASPECT_DEPTH_BIT else c.VK_IMAGE_ASPECT_COLOR_BIT;
+
+		const image_view_info = std.mem.zeroInit(c.VkImageViewCreateInfo, .{
+			.sType = c.VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+			.image = image,
+			.viewType = c.VK_IMAGE_VIEW_TYPE_2D,
+			.format = format,
+			.subresourceRange = .{
+				.aspectMask = aspect_mask,
+				.baseMipLevel = 0,
+				.levelCount = mip_levels,
+				.baseArrayLayer = 0,
+				.layerCount = 1,
+			},
+		});
+
+		var image_view: c.VkImageView = undefined;
+		try VK_CHECK(c.vkCreateImageView(device, &image_view_info, 0, &image_view));
+
 		return .{
 			.image = image,
-			.image_view = try createImageView(device, image, format, 0, mip_levels),
+			.image_view = image_view,
 			.memory = memory,
 		};
 	}
