@@ -8,4 +8,6 @@ pub usingnamespace @cImport({
 	@cInclude("vulkan/vulkan.h");
 
 	@cInclude("shaderc/shaderc.h");
+
+	@cInclude("cgltf/cgltf.h");
 });

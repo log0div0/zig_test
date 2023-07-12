@@ -30,15 +30,8 @@ pub fn load(self: *@This(), device: c.VkDevice,
 	comptime name: []const u8,
 	comptime definitions: []const Definition) !c.VkShaderModule
 {
-	if (std.os.argv.len != 2) {
-		std.log.err("Usage: zig build run -- /project/dir", .{});
-		return error.InvalidCmdLineArguments;
-	}
-
-	const project_dir = std.os.argv[1];
-
 	var tmp = [_]u8{undefined} ** 200;
-    const shader_path = try std.fmt.bufPrint(&tmp, "{s}\\shaders\\{s}", .{project_dir, name});
+    const shader_path = try std.fmt.bufPrint(&tmp, "shaders\\{s}", .{name});
 
 	var file = try std.fs.cwd().openFile(shader_path, .{ .mode = .read_only });
 	defer file.close();

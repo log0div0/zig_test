@@ -30,7 +30,7 @@
 	[
 		{
 			"name": "Run",
-			"shell_cmd": "zig build run -- $project_path",
+			"shell_cmd": "zig build run",
 			"working_dir": "$project_path",
 			"file_regex": "(.*?):(\\d+):(\\d+): (error: .*)",
 		},

@@ -259,6 +259,26 @@ fn createRaytracePipeline(self: *@This(), device: c.VkDevice) !c.VkPipeline
 
 
 
+// ^^^^^^^^^^^^^^^^^ MODELS
+
+fn CGLTF_CHECK(result: c.cgltf_result) !void {
+	return if (result == c.cgltf_result_success) {} else error.GltfError;
+}
+
+fn loadModel() !void
+{
+	const options = std.mem.zeroes(c.cgltf_options);
+	var data: ?*c.cgltf_data = null;
+	try CGLTF_CHECK(c.cgltf_parse_file(&options, "models\\Duck.glb", &data));
+	defer c.cgltf_free(data);
+}
+// ^^^^^^^^^^^^^^^^^ MODELS
+
+
+
+
+
+
 
 
 
@@ -306,6 +326,8 @@ pub fn init(physical_device: c.VkPhysicalDevice, device: c.VkDevice, out_width: 
 
 	try result.initResolutionDependentResources(device, out_width, out_height);
 	errdefer result.deinitResolutionDependentResources(device);
+
+	try loadModel();
 
 	return result;
 }
