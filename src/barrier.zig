@@ -85,6 +85,12 @@ pub fn colorAttachmentOutput2ComputeWrite(image: c.VkImage) c.VkImageMemoryBarri
 		c.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, c.VK_ACCESS_SHADER_WRITE_BIT, c.VK_IMAGE_LAYOUT_GENERAL);
 }
 
+pub fn undefined2ComputeWrite(image: c.VkImage) c.VkImageMemoryBarrier2 {
+	return imageMemory(image, full_color,
+		0, 0, c.VK_IMAGE_LAYOUT_UNDEFINED,
+		c.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, c.VK_ACCESS_SHADER_WRITE_BIT, c.VK_IMAGE_LAYOUT_GENERAL);
+}
+
 pub fn computeWrite2TransferSrc(image: c.VkImage) c.VkImageMemoryBarrier2 {
 	return imageMemory(image, full_color,
 		c.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, c.VK_ACCESS_SHADER_WRITE_BIT, c.VK_IMAGE_LAYOUT_GENERAL,
