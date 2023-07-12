@@ -360,7 +360,6 @@ pub fn main() !void {
 		app.renderFrame(command_buffer);
 
 		barrier.pipeline(command_buffer, c.VK_DEPENDENCY_BY_REGION_BIT, &.{}, &[_]c.VkImageMemoryBarrier2{
-            barrier.colorAttachmentOutput2TransferSrc(app.color_target.image),
             barrier.undefined2TransferDst(swapchain.images[image_index]),
 		});
 

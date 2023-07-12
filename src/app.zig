@@ -140,7 +140,7 @@ fn createDescriptorSetLayout(device: c.VkDevice) !c.VkDescriptorSetLayout
 			.binding = 0,
 			.descriptorType = c.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
 			.descriptorCount = 1,
-			.stageFlags = c.VK_SHADER_STAGE_FRAGMENT_BIT,
+			.stageFlags = c.VK_SHADER_STAGE_COMPUTE_BIT,
 			.pImmutableSamplers = null,
 		}
 	};
@@ -200,6 +200,23 @@ fn createDescriptorPool(device: c.VkDevice) !c.VkDescriptorPool
 	var descriptor_pool: c.VkDescriptorPool = null;
 	try VK_CHECK(c.vkCreateDescriptorPool(device, &pool_info, null, &descriptor_pool));
 	return descriptor_pool;
+}
+
+fn createDescriptorSet(device: c.VkDevice,
+	descriptor_pool: c.VkDescriptorPool,
+	descriptor_set_layout: c.VkDescriptorSetLayout) !c.VkDescriptorSet
+{
+	const allocate_info = c.VkDescriptorSetAllocateInfo{
+		.sType = c.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+		.pNext = null,
+		.descriptorPool = descriptor_pool,
+		.descriptorSetCount = 1,
+		.pSetLayouts = &descriptor_set_layout,
+	};
+
+	var set: c.VkDescriptorSet = null;
+	try VK_CHECK(c.vkAllocateDescriptorSets(device, &allocate_info, &set));
+	return set;
 }
 // %%%%%%%%%%%%%%%%% DESCRIPTORS
 
@@ -366,6 +383,7 @@ descriptor_set_layout: c.VkDescriptorSetLayout,
 pipeline_layout: c.VkPipelineLayout,
 
 descriptor_pool: c.VkDescriptorPool,
+descriptor_set: c.VkDescriptorSet,
 
 triangle_vs: c.VkShaderModule,
 triangle_fs: c.VkShaderModule,
@@ -381,9 +399,6 @@ pub fn init(physical_device: c.VkPhysicalDevice, device: c.VkDevice, out_width: 
 	result.shader_compiler = ShaderCompiler.init();
 	errdefer result.shader_compiler.deinit();
 
-	try result.initResolutionDependentResources(device, out_width, out_height);
-	errdefer result.deinitResolutionDependentResources(device);
-
 	result.descriptor_set_layout = try createDescriptorSetLayout(device);
 	errdefer c.vkDestroyDescriptorSetLayout(device, result.descriptor_set_layout, null);
 	result.pipeline_layout = try createPipelineLayout(device, &.{result.descriptor_set_layout});
@@ -391,9 +406,13 @@ pub fn init(physical_device: c.VkPhysicalDevice, device: c.VkDevice, out_width: 
 
 	result.descriptor_pool = try createDescriptorPool(device);
 	errdefer c.vkDestroyDescriptorPool(device, result.descriptor_pool, null);
+	result.descriptor_set = try createDescriptorSet(device, result.descriptor_pool, result.descriptor_set_layout);
 
 	try result.initPipelines(device);
 	errdefer result.deinitPipelines(device);
+
+	try result.initResolutionDependentResources(device, out_width, out_height);
+	errdefer result.deinitResolutionDependentResources(device);
 
 	return result;
 }
@@ -417,12 +436,28 @@ pub fn initResolutionDependentResources(self: *@This(), device: c.VkDevice, out_
 	self.out_height = out_height;
 
 	self.color_target = try Image.init(device, self.memory_properties, out_width, out_height, 1, color_format,
-		c.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | c.VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+		c.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | c.VK_IMAGE_USAGE_TRANSFER_SRC_BIT | c.VK_IMAGE_USAGE_STORAGE_BIT);
 	errdefer self.color_target.deinit(device);
 
 	self.depth_target = try Image.init(device, self.memory_properties, out_width, out_height, 1, depth_format,
 		c.VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
 	errdefer self.depth_target.deinit(device);
+
+	const write = std.mem.zeroInit(c.VkWriteDescriptorSet, .{
+		.sType = c.VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+		.dstSet = self.descriptor_set,
+		.dstBinding = 0,
+		.dstArrayElement = 0,
+		.descriptorCount = 1,
+		.descriptorType = c.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+		.pImageInfo = &c.VkDescriptorImageInfo{
+			.sampler = null,
+			.imageView = self.color_target.image_view,
+			.imageLayout = c.VK_IMAGE_LAYOUT_GENERAL,
+		},
+	});
+
+	c.vkUpdateDescriptorSets(device, 1, &write, 0, null);
 }
 
 pub fn deinitResolutionDependentResources(self: *@This(), device: c.VkDevice) void {
@@ -458,6 +493,9 @@ pub fn renderFrame(self: *@This(), command_buffer: c.VkCommandBuffer) void {
 	barrier.pipeline(command_buffer, c.VK_DEPENDENCY_BY_REGION_BIT, &.{}, &[_]c.VkImageMemoryBarrier2{
 		barrier.undefined2ColorAttachmentOutput(self.color_target.image),
 	});
+
+	c.vkCmdBindDescriptorSets(command_buffer, c.VK_PIPELINE_BIND_POINT_COMPUTE,
+		self.pipeline_layout, 0, 1, &self.descriptor_set, 0, null);
 
 	const color_attachment = std.mem.zeroInit(c.VkRenderingAttachmentInfo, .{
 		.sType = c.VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
@@ -522,6 +560,14 @@ pub fn renderFrame(self: *@This(), command_buffer: c.VkCommandBuffer) void {
 
 	c.vkCmdEndRendering(command_buffer);
 
+	barrier.pipeline(command_buffer, c.VK_DEPENDENCY_BY_REGION_BIT, &.{}, &[_]c.VkImageMemoryBarrier2{
+		barrier.colorAttachmentOutput2ComputeWrite(self.color_target.image),
+	});
+
 	c.vkCmdBindPipeline(command_buffer, c.VK_PIPELINE_BIND_POINT_COMPUTE, self.raytrace_pipeline);
-	c.vkCmdDispatch(command_buffer, 2, 3, 4);
+	c.vkCmdDispatch(command_buffer, 20, 20, 1);
+
+	barrier.pipeline(command_buffer, c.VK_DEPENDENCY_BY_REGION_BIT, &.{}, &[_]c.VkImageMemoryBarrier2{
+		barrier.computeWrite2TransferSrc(self.color_target.image),
+	});
 }
