@@ -21,7 +21,15 @@ pub fn deinit(self: *@This()) void {
 	std.debug.assert(self.gpa.deinit() == .ok);
 }
 
-pub fn load(self: *@This(), device: c.VkDevice, comptime name: []const u8) !c.VkShaderModule {
+const Definition = struct {
+	name: []const u8,
+	value: []const u8,
+};
+
+pub fn load(self: *@This(), device: c.VkDevice,
+	comptime name: []const u8,
+	comptime definitions: []const Definition) !c.VkShaderModule
+{
 	if (std.os.argv.len != 2) {
 		std.log.err("Usage: zig build run -- /project/dir", .{});
 		return error.InvalidCmdLineArguments;
@@ -49,6 +57,11 @@ pub fn load(self: *@This(), device: c.VkDevice, comptime name: []const u8) !c.Vk
 	defer c.shaderc_compile_options_release(options);
 
 	c.shaderc_compile_options_set_warnings_as_errors(options);
+	for (definitions) |definition| {
+		c.shaderc_compile_options_add_macro_definition(options,
+			definition.name.ptr, definition.name.len,
+			definition.value.ptr, definition.value.len);
+	}
 	// put more options here
 
 	const shader_kind: c.shaderc_shader_kind = comptime

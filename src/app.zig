@@ -264,6 +264,9 @@ fn createRaytracePipeline(self: *@This(), device: c.VkDevice) !c.VkPipeline
 
 pub const color_format: c.VkFormat = c.VK_FORMAT_R16G16B16A16_UNORM;
 
+const local_size_x = 16;
+const local_size_y = 8;
+
 color_target: Image,
 out_width: u32,
 out_height: u32,
@@ -351,7 +354,10 @@ pub fn deinitResolutionDependentResources(self: *@This(), device: c.VkDevice) vo
 }
 
 pub fn initPipelines(self: *@This(), device: c.VkDevice) !void {
-	self.raytrace_cs = try self.shader_compiler.load(device, "raytrace.comp.glsl");
+	self.raytrace_cs = try self.shader_compiler.load(device, "raytrace.comp.glsl", &.{
+		.{ .name = "LOCAL_SIZE_X", .value = std.fmt.comptimePrint("{}", .{local_size_x}) },
+		.{ .name = "LOCAL_SIZE_Y", .value = std.fmt.comptimePrint("{}", .{local_size_y}) },
+	});
 	errdefer c.vkDestroyShaderModule(device, self.raytrace_cs, null);
 	self.raytrace_pipeline = try self.createRaytracePipeline(device);
 	errdefer c.vkDestroyPipeline(device, self.raytrace_pipeline, null);
@@ -372,7 +378,9 @@ pub fn renderFrame(self: *@This(), command_buffer: c.VkCommandBuffer) void {
 	});
 
 	c.vkCmdBindPipeline(command_buffer, c.VK_PIPELINE_BIND_POINT_COMPUTE, self.raytrace_pipeline);
-	c.vkCmdDispatch(command_buffer, 20, 20, 1);
+	const global_size_x: u32 = (self.out_width + local_size_x - 1) / local_size_x;
+	const global_size_y: u32 = (self.out_height + local_size_y - 1) / local_size_y;
+	c.vkCmdDispatch(command_buffer, global_size_x, global_size_y, 1);
 
 	barrier.pipeline(command_buffer, c.VK_DEPENDENCY_BY_REGION_BIT, &.{}, &[_]c.VkImageMemoryBarrier2{
 		barrier.computeWrite2TransferSrc(self.color_target.image),
