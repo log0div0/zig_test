@@ -4,6 +4,15 @@ const c = @import("c.zig");
 const barrier = @import("barrier.zig");
 const ShaderCompiler = @import("shader_compiler.zig");
 
+
+
+
+
+
+
+
+
+// @@@@@@@@@@@@@@@@@@ HELPERS
 fn VK_CHECK(result: c.VkResult) !void {
 	return if (result == c.VK_SUCCESS) {} else error.VkError;
 }
@@ -18,7 +27,18 @@ fn selectMemoryType(memory_properties: c.VkPhysicalDeviceMemoryProperties, memor
 
 	return error.NoCompatibleMemoryTypeFound;
 }
+// @@@@@@@@@@@@@@@@@@ HELPERS
 
+
+
+
+
+
+
+
+
+
+// <<<<<<<<<<<<<<<<< THIS IS TEMPORARY
 pub const Image = struct{
 	memory: c.VkDeviceMemory,
 	image: c.VkImage,
@@ -100,179 +120,67 @@ pub const Image = struct{
 		c.vkFreeMemory(device, self.memory, null);
 	}
 };
+// <<<<<<<<<<<<<<<<< THIS IS TEMPORARY
 
-pub const color_format: c.VkFormat = c.VK_FORMAT_R16G16B16A16_UNORM;
-pub const depth_format: c.VkFormat = c.VK_FORMAT_D32_SFLOAT;
 
-color_target: Image,
-depth_target: Image,
-out_width: u32,
-out_height: u32,
 
-shader_compiler: ShaderCompiler,
-pipeline_layout: c.VkPipelineLayout,
-memory_properties: c.VkPhysicalDeviceMemoryProperties,
 
-triangle_vs: c.VkShaderModule,
-triangle_fs: c.VkShaderModule,
-triangle_pipeline: c.VkPipeline,
-raytrace_cs: c.VkShaderModule,
-raytrace_pipeline: c.VkPipeline,
 
-pub fn init(physical_device: c.VkPhysicalDevice, device: c.VkDevice, out_width: u32, out_height: u32,) !@This() {
-	var result: @This() = undefined;
 
-	c.vkGetPhysicalDeviceMemoryProperties(physical_device, &result.memory_properties);
 
-	result.pipeline_layout = try createPipelineLayout(device);
-	errdefer c.vkDestroyPipelineLayout(device, result.pipeline_layout, null);
 
-	result.shader_compiler = ShaderCompiler.init();
-	errdefer result.shader_compiler.deinit();
 
-	try result.initResolutionDependentResources(device, out_width, out_height);
-	errdefer result.deinitResolutionDependentResources(device);
 
-	try result.initPipelines(device);
-	errdefer result.deinitPipelines(device);
 
-	return result;
-}
-
-pub fn deinit(self: *@This(), device: c.VkDevice) void {
-	self.deinitResolutionDependentResources(device);
-	self.deinitPipelines(device);
-
-	c.vkDestroyPipelineLayout(device, self.pipeline_layout, null);
-	self.shader_compiler.deinit();
-}
-
-pub fn initResolutionDependentResources(self: *@This(), device: c.VkDevice, out_width: u32, out_height: u32) !void {
-
-	self.out_width = out_width;
-	self.out_height = out_height;
-
-	self.color_target = try Image.init(device, self.memory_properties, out_width, out_height, 1, color_format,
-		c.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | c.VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
-	errdefer self.color_target.deinit(device);
-
-	self.depth_target = try Image.init(device, self.memory_properties, out_width, out_height, 1, depth_format,
-		c.VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
-	errdefer self.depth_target.deinit(device);
-}
-
-pub fn deinitResolutionDependentResources(self: *@This(), device: c.VkDevice) void {
-	self.color_target.deinit(device);
-	self.depth_target.deinit(device);
-}
-
-pub fn initPipelines(self: *@This(), device: c.VkDevice) !void {
-	self.triangle_vs = try self.shader_compiler.load(device, "triangle.vert.glsl");
-	errdefer c.vkDestroyShaderModule(device, self.triangle_vs, null);
-	self.triangle_fs = try self.shader_compiler.load(device, "triangle.frag.glsl");
-	errdefer c.vkDestroyShaderModule(device, self.triangle_fs, null);
-	self.triangle_pipeline = try self.createTrianglePipeline(device);
-	errdefer c.vkDestroyPipeline(device, self.triangle_pipeline, null);
-
-	self.raytrace_cs = try self.shader_compiler.load(device, "raytrace.comp.glsl");
-	errdefer c.vkDestroyShaderModule(device, self.raytrace_cs, null);
-	self.raytrace_pipeline = try self.createRaytracePipeline(device);
-	errdefer c.vkDestroyPipeline(device, self.raytrace_pipeline, null);
-}
-
-pub fn deinitPipelines(self: *@This(), device: c.VkDevice) void {
-	c.vkDestroyShaderModule(device, self.triangle_vs, null);
-	c.vkDestroyShaderModule(device, self.triangle_fs, null);
-	c.vkDestroyPipeline(device, self.triangle_pipeline, null);
-
-	c.vkDestroyShaderModule(device, self.raytrace_cs, null);
-	c.vkDestroyPipeline(device, self.raytrace_pipeline, null);
-}
-
-pub fn renderFrame(self: *@This(), command_buffer: c.VkCommandBuffer) void {
-
-	barrier.pipeline(command_buffer, c.VK_DEPENDENCY_BY_REGION_BIT, &.{}, &[_]c.VkImageMemoryBarrier2{
-		barrier.undefined2ColorAttachmentOutput(self.color_target.image),
-	});
-
-	const color_attachment = std.mem.zeroInit(c.VkRenderingAttachmentInfo, .{
-		.sType = c.VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-		.imageView = self.color_target.image_view,
-		.imageLayout = c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-		.loadOp = c.VK_ATTACHMENT_LOAD_OP_CLEAR,
-		.storeOp = c.VK_ATTACHMENT_STORE_OP_STORE,
-		.clearValue = .{
-			.color = c.VkClearColorValue{ .float32 = .{0.5,0.5,0.5,0} }
-		},
-	});
-
-	const depth_attachment = std.mem.zeroInit(c.VkRenderingAttachmentInfo, .{
-		.sType = c.VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-		.imageView = self.depth_target.image_view,
-		.imageLayout = c.VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-		.loadOp = c.VK_ATTACHMENT_LOAD_OP_CLEAR,
-		.storeOp = c.VK_ATTACHMENT_STORE_OP_STORE,
-		.clearValue = .{
-			.depthStencil = c.VkClearDepthStencilValue{ .depth = 0, .stencil = 0}
-		},
-	});
-
-	const pass_info = std.mem.zeroInit(c.VkRenderingInfo, .{
-		.sType = c.VK_STRUCTURE_TYPE_RENDERING_INFO,
-		.renderArea = c.VkRect2D{
-			.offset = .{ .x = 0, .y = 0 },
-			.extent = .{
-				.width = self.out_width,
-				.height = self.out_height
-			},
-		},
-		.layerCount = 1,
-		.colorAttachmentCount = 1,
-		.pColorAttachments = &color_attachment,
-		.pDepthAttachment = &depth_attachment,
-	});
-
-	c.vkCmdBeginRendering(command_buffer, &pass_info);
-
-	const viewport = c.VkViewport{
-		.x = 0,
-		.y = @floatFromInt(self.out_height),
-		.width = @floatFromInt(self.out_width),
-		.height = -@as(f32, @floatFromInt(self.out_height)),
-		.minDepth = 0,
-		.maxDepth = 1
-	};
-	const scissor = c.VkRect2D{
-		.offset = .{ .x = 0, .y = 0},
-		.extent = .{
-			.width = self.out_width,
-			.height = self.out_height
+// $$$$$$$$$$$$$$$$$ PIPELINE LAYOUT
+fn createDescriptorSetLayout(device: c.VkDevice) !c.VkDescriptorSetLayout
+{
+	const set_bindings = [_]c.VkDescriptorSetLayoutBinding{
+		.{
+			.binding = 0,
+			.descriptorType = c.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+			.descriptorCount = 1,
+			.stageFlags = c.VK_SHADER_STAGE_FRAGMENT_BIT,
+			.pImmutableSamplers = null,
 		}
 	};
 
-	c.vkCmdSetViewport(command_buffer, 0, 1, &viewport);
-	c.vkCmdSetScissor(command_buffer, 0, 1, &scissor);
+	const set_create_info = std.mem.zeroInit(c.VkDescriptorSetLayoutCreateInfo, .{
+		.sType = c.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+		.flags = 0,
+		.bindingCount = set_bindings.len,
+		.pBindings = &set_bindings,
+	});
 
-	c.vkCmdBindPipeline(command_buffer, c.VK_PIPELINE_BIND_POINT_GRAPHICS, self.triangle_pipeline);
-	c.vkCmdDraw(command_buffer, 3, 1, 0, 0);
-
-	c.vkCmdEndRendering(command_buffer);
-
-	c.vkCmdBindPipeline(command_buffer, c.VK_PIPELINE_BIND_POINT_COMPUTE, self.raytrace_pipeline);
-	c.vkCmdDispatch(command_buffer, 2, 3, 4);
+	var set_layout: c.VkDescriptorSetLayout = null;
+	try VK_CHECK(c.vkCreateDescriptorSetLayout(device, &set_create_info, null, &set_layout));
+	return set_layout;
 }
 
-fn createPipelineLayout(device: c.VkDevice) !c.VkPipelineLayout
+fn createPipelineLayout(device: c.VkDevice, set_layouts: []const c.VkDescriptorSetLayout) !c.VkPipelineLayout
 {
 	const create_info = std.mem.zeroInit(c.VkPipelineLayoutCreateInfo, .{
 		.sType = c.VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+		.setLayoutCount = @as(u32, @intCast(set_layouts.len)),
+		.pSetLayouts = set_layouts.ptr,
 	});
 
 	var result: c.VkPipelineLayout = null;
 	try VK_CHECK(c.vkCreatePipelineLayout(device, &create_info, null, &result));
 	return result;
 }
+// $$$$$$$$$$$$$$$$$ PIPELINE LAYOUT
 
+
+
+
+
+
+
+
+
+
+// ################# PIPELINES
 fn createTrianglePipeline(self: *@This(), device: c.VkDevice) !c.VkPipeline
 {
 	const stages = [_]c.VkPipelineShaderStageCreateInfo{
@@ -399,4 +307,183 @@ fn createRaytracePipeline(self: *@This(), device: c.VkDevice) !c.VkPipeline
 	var pipeline: c.VkPipeline = null;
 	try VK_CHECK(c.vkCreateComputePipelines(device, pipeline_cache, 1, &create_info, null, &pipeline));
 	return pipeline;
+}
+// ################# PIPELINES
+
+
+
+
+
+
+
+
+
+
+pub const color_format: c.VkFormat = c.VK_FORMAT_R16G16B16A16_UNORM;
+pub const depth_format: c.VkFormat = c.VK_FORMAT_D32_SFLOAT;
+
+color_target: Image,
+depth_target: Image,
+out_width: u32,
+out_height: u32,
+
+memory_properties: c.VkPhysicalDeviceMemoryProperties,
+
+shader_compiler: ShaderCompiler,
+
+descriptor_set_layout: c.VkDescriptorSetLayout,
+pipeline_layout: c.VkPipelineLayout,
+
+triangle_vs: c.VkShaderModule,
+triangle_fs: c.VkShaderModule,
+triangle_pipeline: c.VkPipeline,
+raytrace_cs: c.VkShaderModule,
+raytrace_pipeline: c.VkPipeline,
+
+pub fn init(physical_device: c.VkPhysicalDevice, device: c.VkDevice, out_width: u32, out_height: u32,) !@This() {
+	var result: @This() = undefined;
+
+	c.vkGetPhysicalDeviceMemoryProperties(physical_device, &result.memory_properties);
+
+	result.shader_compiler = ShaderCompiler.init();
+	errdefer result.shader_compiler.deinit();
+
+	try result.initResolutionDependentResources(device, out_width, out_height);
+	errdefer result.deinitResolutionDependentResources(device);
+
+	result.descriptor_set_layout = try createDescriptorSetLayout(device);
+	errdefer c.vkDestroyDescriptorSetLayout(device, result.descriptor_set_layout, null);
+
+	result.pipeline_layout = try createPipelineLayout(device, &.{result.descriptor_set_layout});
+	errdefer c.vkDestroyPipelineLayout(device, result.pipeline_layout, null);
+
+	try result.initPipelines(device);
+	errdefer result.deinitPipelines(device);
+
+	return result;
+}
+
+pub fn deinit(self: *@This(), device: c.VkDevice) void {
+	self.deinitResolutionDependentResources(device);
+	self.deinitPipelines(device);
+
+	c.vkDestroyPipelineLayout(device, self.pipeline_layout, null);
+	c.vkDestroyDescriptorSetLayout(device, self.descriptor_set_layout, null);
+
+	self.shader_compiler.deinit();
+}
+
+pub fn initResolutionDependentResources(self: *@This(), device: c.VkDevice, out_width: u32, out_height: u32) !void {
+
+	self.out_width = out_width;
+	self.out_height = out_height;
+
+	self.color_target = try Image.init(device, self.memory_properties, out_width, out_height, 1, color_format,
+		c.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | c.VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+	errdefer self.color_target.deinit(device);
+
+	self.depth_target = try Image.init(device, self.memory_properties, out_width, out_height, 1, depth_format,
+		c.VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
+	errdefer self.depth_target.deinit(device);
+}
+
+pub fn deinitResolutionDependentResources(self: *@This(), device: c.VkDevice) void {
+	self.color_target.deinit(device);
+	self.depth_target.deinit(device);
+}
+
+pub fn initPipelines(self: *@This(), device: c.VkDevice) !void {
+	self.triangle_vs = try self.shader_compiler.load(device, "triangle.vert.glsl");
+	errdefer c.vkDestroyShaderModule(device, self.triangle_vs, null);
+	self.triangle_fs = try self.shader_compiler.load(device, "triangle.frag.glsl");
+	errdefer c.vkDestroyShaderModule(device, self.triangle_fs, null);
+	self.triangle_pipeline = try self.createTrianglePipeline(device);
+	errdefer c.vkDestroyPipeline(device, self.triangle_pipeline, null);
+
+	self.raytrace_cs = try self.shader_compiler.load(device, "raytrace.comp.glsl");
+	errdefer c.vkDestroyShaderModule(device, self.raytrace_cs, null);
+	self.raytrace_pipeline = try self.createRaytracePipeline(device);
+	errdefer c.vkDestroyPipeline(device, self.raytrace_pipeline, null);
+}
+
+pub fn deinitPipelines(self: *@This(), device: c.VkDevice) void {
+	c.vkDestroyShaderModule(device, self.triangle_vs, null);
+	c.vkDestroyShaderModule(device, self.triangle_fs, null);
+	c.vkDestroyPipeline(device, self.triangle_pipeline, null);
+
+	c.vkDestroyShaderModule(device, self.raytrace_cs, null);
+	c.vkDestroyPipeline(device, self.raytrace_pipeline, null);
+}
+
+pub fn renderFrame(self: *@This(), command_buffer: c.VkCommandBuffer) void {
+
+	barrier.pipeline(command_buffer, c.VK_DEPENDENCY_BY_REGION_BIT, &.{}, &[_]c.VkImageMemoryBarrier2{
+		barrier.undefined2ColorAttachmentOutput(self.color_target.image),
+	});
+
+	const color_attachment = std.mem.zeroInit(c.VkRenderingAttachmentInfo, .{
+		.sType = c.VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+		.imageView = self.color_target.image_view,
+		.imageLayout = c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+		.loadOp = c.VK_ATTACHMENT_LOAD_OP_CLEAR,
+		.storeOp = c.VK_ATTACHMENT_STORE_OP_STORE,
+		.clearValue = .{
+			.color = c.VkClearColorValue{ .float32 = .{0.5,0.5,0.5,0} }
+		},
+	});
+
+	const depth_attachment = std.mem.zeroInit(c.VkRenderingAttachmentInfo, .{
+		.sType = c.VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+		.imageView = self.depth_target.image_view,
+		.imageLayout = c.VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+		.loadOp = c.VK_ATTACHMENT_LOAD_OP_CLEAR,
+		.storeOp = c.VK_ATTACHMENT_STORE_OP_STORE,
+		.clearValue = .{
+			.depthStencil = c.VkClearDepthStencilValue{ .depth = 0, .stencil = 0}
+		},
+	});
+
+	const pass_info = std.mem.zeroInit(c.VkRenderingInfo, .{
+		.sType = c.VK_STRUCTURE_TYPE_RENDERING_INFO,
+		.renderArea = c.VkRect2D{
+			.offset = .{ .x = 0, .y = 0 },
+			.extent = .{
+				.width = self.out_width,
+				.height = self.out_height
+			},
+		},
+		.layerCount = 1,
+		.colorAttachmentCount = 1,
+		.pColorAttachments = &color_attachment,
+		.pDepthAttachment = &depth_attachment,
+	});
+
+	c.vkCmdBeginRendering(command_buffer, &pass_info);
+
+	const viewport = c.VkViewport{
+		.x = 0,
+		.y = @floatFromInt(self.out_height),
+		.width = @floatFromInt(self.out_width),
+		.height = -@as(f32, @floatFromInt(self.out_height)),
+		.minDepth = 0,
+		.maxDepth = 1
+	};
+	const scissor = c.VkRect2D{
+		.offset = .{ .x = 0, .y = 0},
+		.extent = .{
+			.width = self.out_width,
+			.height = self.out_height
+		}
+	};
+
+	c.vkCmdSetViewport(command_buffer, 0, 1, &viewport);
+	c.vkCmdSetScissor(command_buffer, 0, 1, &scissor);
+
+	c.vkCmdBindPipeline(command_buffer, c.VK_PIPELINE_BIND_POINT_GRAPHICS, self.triangle_pipeline);
+	c.vkCmdDraw(command_buffer, 3, 1, 0, 0);
+
+	c.vkCmdEndRendering(command_buffer);
+
+	c.vkCmdBindPipeline(command_buffer, c.VK_PIPELINE_BIND_POINT_COMPUTE, self.raytrace_pipeline);
+	c.vkCmdDispatch(command_buffer, 2, 3, 4);
 }
