@@ -180,6 +180,37 @@ fn createPipelineLayout(device: c.VkDevice, set_layouts: []const c.VkDescriptorS
 
 
 
+
+// %%%%%%%%%%%%%%%%% DESCRIPTORS
+fn createDescriptorPool(device: c.VkDevice) !c.VkDescriptorPool
+{
+	const pool_sizes = [_]c.VkDescriptorPoolSize{
+		.{ .type = c.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, .descriptorCount = 128 },
+	};
+
+	const pool_info = c.VkDescriptorPoolCreateInfo{
+		.sType = c.VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+		.pNext = null,
+		.flags = 0,
+		.maxSets = 1,
+		.poolSizeCount = pool_sizes.len,
+		.pPoolSizes = &pool_sizes,
+	};
+
+	var descriptor_pool: c.VkDescriptorPool = null;
+	try VK_CHECK(c.vkCreateDescriptorPool(device, &pool_info, null, &descriptor_pool));
+	return descriptor_pool;
+}
+// %%%%%%%%%%%%%%%%% DESCRIPTORS
+
+
+
+
+
+
+
+
+
 // ################# PIPELINES
 fn createTrianglePipeline(self: *@This(), device: c.VkDevice) !c.VkPipeline
 {
@@ -334,6 +365,8 @@ shader_compiler: ShaderCompiler,
 descriptor_set_layout: c.VkDescriptorSetLayout,
 pipeline_layout: c.VkPipelineLayout,
 
+descriptor_pool: c.VkDescriptorPool,
+
 triangle_vs: c.VkShaderModule,
 triangle_fs: c.VkShaderModule,
 triangle_pipeline: c.VkPipeline,
@@ -353,9 +386,11 @@ pub fn init(physical_device: c.VkPhysicalDevice, device: c.VkDevice, out_width: 
 
 	result.descriptor_set_layout = try createDescriptorSetLayout(device);
 	errdefer c.vkDestroyDescriptorSetLayout(device, result.descriptor_set_layout, null);
-
 	result.pipeline_layout = try createPipelineLayout(device, &.{result.descriptor_set_layout});
 	errdefer c.vkDestroyPipelineLayout(device, result.pipeline_layout, null);
+
+	result.descriptor_pool = try createDescriptorPool(device);
+	errdefer c.vkDestroyDescriptorPool(device, result.descriptor_pool, null);
 
 	try result.initPipelines(device);
 	errdefer result.deinitPipelines(device);
@@ -364,13 +399,16 @@ pub fn init(physical_device: c.VkPhysicalDevice, device: c.VkDevice, out_width: 
 }
 
 pub fn deinit(self: *@This(), device: c.VkDevice) void {
-	self.deinitResolutionDependentResources(device);
 	self.deinitPipelines(device);
+
+	c.vkDestroyDescriptorPool(device, self.descriptor_pool, null);
 
 	c.vkDestroyPipelineLayout(device, self.pipeline_layout, null);
 	c.vkDestroyDescriptorSetLayout(device, self.descriptor_set_layout, null);
 
 	self.shader_compiler.deinit();
+
+	self.deinitResolutionDependentResources(device);
 }
 
 pub fn initResolutionDependentResources(self: *@This(), device: c.VkDevice, out_width: u32, out_height: u32) !void {
