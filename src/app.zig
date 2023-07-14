@@ -56,12 +56,13 @@ fn dumpMemoryTypes(memory_properties: c.VkPhysicalDeviceMemoryProperties) void
 
 fn selectMemoryType(memory_properties: c.VkPhysicalDeviceMemoryProperties, memory_type_bits: u32, flags: c.VkMemoryPropertyFlags) !u32
 {
-	for (0..memory_properties.memoryTypeCount) |i| {
-		const bit = @as(u32, 1) << @intCast(i);
-		if ((memory_type_bits & bit) != 0 and (memory_properties.memoryTypes[i].propertyFlags & flags) == flags)
-			return @intCast(i);
+	var remaining_bits = memory_type_bits;
+	while (remaining_bits != 0) {
+		const index = @ctz(remaining_bits);
+		if (memory_properties.memoryTypes[index].propertyFlags & flags == flags)
+			return index;
+		remaining_bits ^= @as(u32, 1) << @intCast(index);
 	}
-
 	return error.NoCompatibleMemoryTypeFound;
 }
 // @@@@@@@@@@@@@@@@@@ HELPERS
