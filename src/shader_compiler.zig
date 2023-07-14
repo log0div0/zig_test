@@ -1,12 +1,11 @@
 const std = @import("std");
 const c = @import("c.zig");
+const ShortTermMem = @import("short_term_mem.zig");
 
 fn VK_CHECK(result: c.VkResult) !void {
 	return if (result == c.VK_SUCCESS) {} else error.VkError;
 }
 
-gpa: std.heap.GeneralPurposeAllocator(.{}) = .{},
-temp_buf: []u8 = undefined,
 handle: c.shaderc_compiler_t,
 
 pub fn init() @This() {
@@ -17,8 +16,6 @@ pub fn init() @This() {
 
 pub fn deinit(self: *@This()) void {
 	c.shaderc_compiler_release(self.handle);
-	self.gpa.allocator().free(self.temp_buf);
-	std.debug.assert(self.gpa.deinit() == .ok);
 }
 
 const Definition = struct {
@@ -28,7 +25,8 @@ const Definition = struct {
 
 pub fn load(self: *@This(), device: c.VkDevice,
 	comptime name: []const u8,
-	comptime definitions: []const Definition) !c.VkShaderModule
+	comptime definitions: []const Definition,
+	short_term_mem: *ShortTermMem) !c.VkShaderModule
 {
 	var tmp = [_]u8{undefined} ** 200;
     const shader_path = try std.fmt.bufPrint(&tmp, "shaders\\{s}", .{name});
@@ -38,11 +36,10 @@ pub fn load(self: *@This(), device: c.VkDevice,
 
 	const file_size = try file.getEndPos();
 
-	if (self.temp_buf.len < file_size) {
-		self.temp_buf = try self.gpa.allocator().realloc(self.temp_buf, file_size);
-	}
+	var temp_buf = try short_term_mem.lock(u8, file_size);
+	defer short_term_mem.unlock();
 
-	if (try file.readAll(self.temp_buf) != file_size) {
+	if (try file.readAll(temp_buf) != file_size) {
 		return error.FailedToReadShaderSouceCode;
 	}
 
@@ -64,7 +61,7 @@ pub fn load(self: *@This(), device: c.VkDevice,
 		else @panic("invalid shader extension");
 
 	const result = c.shaderc_compile_into_spv(
-		self.handle, self.temp_buf.ptr, file_size,
+		self.handle, temp_buf.ptr, file_size,
 		shader_kind, name.ptr, "main", options);
 	defer c.shaderc_result_release(result);
 
