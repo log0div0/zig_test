@@ -17,39 +17,39 @@ fn VK_CHECK(result: c.VkResult) !void {
 	return if (result == c.VK_SUCCESS) {} else error.VkError;
 }
 
-fn dumpMemoryTypeFlag(stream: *std.io.FixedBufferStream([]u8), flags: u32, flag_value: u32, comptime flag_name: []const u8) void {
-	 _ = stream.write(" ") catch unreachable;
+fn dumpMemoryTypeFlag(flags: u32, flag_value: u32, comptime flag_name: []const u8) void {
+	 std.debug.print(" ", .{});
 	 if (flags & flag_value != 0) {
-		 _ = stream.write(flag_name) catch unreachable;
+		 std.debug.print(flag_name, .{});
 	 } else {
-		 _ = stream.write(" " ** flag_name.len) catch unreachable;
+		 std.debug.print(" " ** flag_name.len, .{});
 	 }
 }
 
 fn dumpMemoryTypes(memory_properties: c.VkPhysicalDeviceMemoryProperties) void
 {
 	for (0..memory_properties.memoryHeapCount) |heap|{
-		std.log.info("Heap#{}", .{heap});
+		const size = memory_properties.memoryHeaps[heap].size;
+		std.debug.print("Heap#{} size = {:.2}\n", .{heap, std.fmt.fmtIntSizeBin(size)});
 		for (0..memory_properties.memoryTypeCount) |i| {
 			if (memory_properties.memoryTypes[i].heapIndex != heap) {
 				continue;
 			}
 			const flags = memory_properties.memoryTypes[i].propertyFlags;
 
-			var buf: [300]u8 = undefined;
-			var stream = std.io.fixedBufferStream(&buf);
+			std.debug.print("  Type#{}:", .{i});
 
-			dumpMemoryTypeFlag(&stream, flags, c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, "device_local");
-			dumpMemoryTypeFlag(&stream, flags, c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, "host_visible");
-			dumpMemoryTypeFlag(&stream, flags, c.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, "host_coherent");
-			dumpMemoryTypeFlag(&stream, flags, c.VK_MEMORY_PROPERTY_HOST_CACHED_BIT, "host_cached");
-			dumpMemoryTypeFlag(&stream, flags, c.VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT, "lazily_allocated");
-			dumpMemoryTypeFlag(&stream, flags, c.VK_MEMORY_PROPERTY_PROTECTED_BIT, "protected");
-			dumpMemoryTypeFlag(&stream, flags, c.VK_MEMORY_PROPERTY_DEVICE_COHERENT_BIT_AMD, "device_coherent_bit");
-			dumpMemoryTypeFlag(&stream, flags, c.VK_MEMORY_PROPERTY_DEVICE_UNCACHED_BIT_AMD, "device_uncached_bit");
-			dumpMemoryTypeFlag(&stream, flags, c.VK_MEMORY_PROPERTY_RDMA_CAPABLE_BIT_NV, "rdma_capable_bi");
+			dumpMemoryTypeFlag(flags, c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, "device_local");
+			dumpMemoryTypeFlag(flags, c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, "host_visible");
+			dumpMemoryTypeFlag(flags, c.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, "host_coherent");
+			dumpMemoryTypeFlag(flags, c.VK_MEMORY_PROPERTY_HOST_CACHED_BIT, "host_cached");
+			dumpMemoryTypeFlag(flags, c.VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT, "lazily_allocated");
+			dumpMemoryTypeFlag(flags, c.VK_MEMORY_PROPERTY_PROTECTED_BIT, "protected");
+			dumpMemoryTypeFlag(flags, c.VK_MEMORY_PROPERTY_DEVICE_COHERENT_BIT_AMD, "device_coherent_bit");
+			dumpMemoryTypeFlag(flags, c.VK_MEMORY_PROPERTY_DEVICE_UNCACHED_BIT_AMD, "device_uncached_bit");
+			dumpMemoryTypeFlag(flags, c.VK_MEMORY_PROPERTY_RDMA_CAPABLE_BIT_NV, "rdma_capable_bi");
 
-			std.log.info("  Type#{}:{s}", .{i, stream.getWritten()});
+			std.debug.print("\n", .{});
 		}
 	}
 }

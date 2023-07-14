@@ -7,7 +7,7 @@ const App = @import("app.zig");
 const barrier = @import("barrier.zig");
 
 export fn glfwErrorCallback(err: c_int, description: [*c]const u8) void {
-	std.log.err("GLFW error #{}: {s}", .{err, description});
+	std.debug.print("GLFW error #{}: {s}\n", .{err, description});
 }
 
 fn VK_CHECK(result: c.VkResult) !void {
@@ -89,7 +89,7 @@ fn pickPhysicalDevice(physical_devices: []c.VkPhysicalDevice) !c.VkPhysicalDevic
 		var props: c.VkPhysicalDeviceProperties = undefined;
 		c.vkGetPhysicalDeviceProperties(device, &props);
 
-		std.log.info("GPU{}: {s}", .{i, @as([*c]const u8, @ptrCast(&props.deviceName))});
+		std.debug.print("GPU{}: {s}\n", .{i, @as([*c]const u8, @ptrCast(&props.deviceName))});
 
 		const family_index = try getGraphicsFamilyIndex(device);
 		if (family_index == c.VK_QUEUE_FAMILY_IGNORED) {
@@ -119,7 +119,7 @@ fn pickPhysicalDevice(physical_devices: []c.VkPhysicalDevice) !c.VkPhysicalDevic
 		var props: c.VkPhysicalDeviceProperties = undefined;
 		c.vkGetPhysicalDeviceProperties(result, &props);
 
-		std.log.info("Selected GPU {s}", .{@as([*c]const u8, @ptrCast(&props.deviceName))});
+		std.debug.print("Selected GPU {s}\n", .{@as([*c]const u8, @ptrCast(&props.deviceName))});
 		return result;
 	}
 	else {
