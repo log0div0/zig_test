@@ -17,6 +17,43 @@ fn VK_CHECK(result: c.VkResult) !void {
 	return if (result == c.VK_SUCCESS) {} else error.VkError;
 }
 
+fn dumpMemoryTypeFlag(stream: *std.io.FixedBufferStream([]u8), flags: u32, flag_value: u32, comptime flag_name: []const u8) void {
+	 _ = stream.write(" ") catch unreachable;
+	 if (flags & flag_value != 0) {
+		 _ = stream.write(flag_name) catch unreachable;
+	 } else {
+		 _ = stream.write(" " ** flag_name.len) catch unreachable;
+	 }
+}
+
+fn dumpMemoryTypes(memory_properties: c.VkPhysicalDeviceMemoryProperties) void
+{
+	for (0..memory_properties.memoryHeapCount) |heap|{
+		std.log.info("Heap#{}", .{heap});
+		for (0..memory_properties.memoryTypeCount) |i| {
+			if (memory_properties.memoryTypes[i].heapIndex != heap) {
+				continue;
+			}
+			const flags = memory_properties.memoryTypes[i].propertyFlags;
+
+			var buf: [300]u8 = undefined;
+			var stream = std.io.fixedBufferStream(&buf);
+
+			dumpMemoryTypeFlag(&stream, flags, c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, "device_local");
+			dumpMemoryTypeFlag(&stream, flags, c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, "host_visible");
+			dumpMemoryTypeFlag(&stream, flags, c.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, "host_coherent");
+			dumpMemoryTypeFlag(&stream, flags, c.VK_MEMORY_PROPERTY_HOST_CACHED_BIT, "host_cached");
+			dumpMemoryTypeFlag(&stream, flags, c.VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT, "lazily_allocated");
+			dumpMemoryTypeFlag(&stream, flags, c.VK_MEMORY_PROPERTY_PROTECTED_BIT, "protected");
+			dumpMemoryTypeFlag(&stream, flags, c.VK_MEMORY_PROPERTY_DEVICE_COHERENT_BIT_AMD, "device_coherent_bit");
+			dumpMemoryTypeFlag(&stream, flags, c.VK_MEMORY_PROPERTY_DEVICE_UNCACHED_BIT_AMD, "device_uncached_bit");
+			dumpMemoryTypeFlag(&stream, flags, c.VK_MEMORY_PROPERTY_RDMA_CAPABLE_BIT_NV, "rdma_capable_bi");
+
+			std.log.info("  Type#{}:{s}", .{i, stream.getWritten()});
+		}
+	}
+}
+
 fn selectMemoryType(memory_properties: c.VkPhysicalDeviceMemoryProperties, memory_type_bits: u32, flags: c.VkMemoryPropertyFlags) !u32
 {
 	for (0..memory_properties.memoryTypeCount) |i| {
@@ -308,6 +345,7 @@ pub fn init(physical_device: c.VkPhysicalDevice, device: c.VkDevice, out_width: 
 	var result: @This() = undefined;
 
 	c.vkGetPhysicalDeviceMemoryProperties(physical_device, &result.memory_properties);
+	dumpMemoryTypes(result.memory_properties);
 
 	result.shader_compiler = ShaderCompiler.init();
 	errdefer result.shader_compiler.deinit();
