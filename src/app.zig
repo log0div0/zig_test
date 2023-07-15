@@ -5,19 +5,18 @@ const barrier = @import("barrier.zig");
 const ShaderCompiler = @import("shader_compiler.zig");
 const ShortTermMem = @import("short_term_mem.zig");
 
-
-
-
-
-
-
-
-
-// @@@@@@@@@@@@@@@@@@ HELPERS
 fn VK_CHECK(result: c.VkResult) !void {
 	return if (result == c.VK_SUCCESS) {} else error.VkError;
 }
 
+
+
+
+
+
+
+
+// @@@@@@@@@@@@@@@@@@ MEMORY
 fn dumpMemoryTypeFlag(flags: u32, flag_value: u32, comptime flag_name: []const u8) void {
 	 std.debug.print(" ", .{});
 	 if (flags & flag_value != 0) {
@@ -55,18 +54,75 @@ fn dumpMemoryTypes(memory_properties: c.VkPhysicalDeviceMemoryProperties) void
 	}
 }
 
-fn selectMemoryType(memory_properties: c.VkPhysicalDeviceMemoryProperties, memory_type_bits: u32, flags: c.VkMemoryPropertyFlags) !u32
+fn selectMemoryType(available_memory: c.VkPhysicalDeviceMemoryProperties,
+	allowed_memory_types: u32,
+	required_memory_flags: c.VkMemoryPropertyFlags,
+	banned_memory_flags: c.VkMemoryPropertyFlags) !u32
 {
-	var remaining_bits = memory_type_bits;
+	var remaining_bits = allowed_memory_types;
 	while (remaining_bits != 0) {
 		const index = @ctz(remaining_bits);
-		if (memory_properties.memoryTypes[index].propertyFlags & flags == flags)
+		if (available_memory.memoryTypes[index].propertyFlags & required_memory_flags == required_memory_flags and
+			available_memory.memoryTypes[index].propertyFlags & banned_memory_flags == 0)
+		{
 			return index;
+		}
 		remaining_bits ^= @as(u32, 1) << @intCast(index);
 	}
 	return error.NoCompatibleMemoryTypeFound;
 }
-// @@@@@@@@@@@@@@@@@@ HELPERS
+
+fn allocAndBindMemoryForAllImages(device: c.VkDevice,
+	images: []const c.VkImage,
+	available_memory: c.VkPhysicalDeviceMemoryProperties,
+	required_memory_flags: c.VkMemoryPropertyFlags,
+	banned_memory_flags: c.VkMemoryPropertyFlags,) !c.VkDeviceMemory
+{
+	var total_size: c.VkDeviceSize = 0;
+	var memory_type_mask: u32 = ~@as(u32, 0);
+
+	for (images) |image| {
+		var requirements: c.VkMemoryRequirements = undefined;
+		c.vkGetImageMemoryRequirements(device, image, &requirements);
+
+		total_size = std.mem.alignForward(c.VkDeviceSize, total_size, requirements.alignment);
+		total_size += requirements.size;
+
+		memory_type_mask &= requirements.memoryTypeBits;
+	}
+
+	if (memory_type_mask == 0) {
+		return error.CanntPutAllImagesInASingleChunkOfMemory;
+	}
+
+	const memory_type_index = try selectMemoryType(available_memory, memory_type_mask, required_memory_flags, banned_memory_flags);
+
+	const allocate_info = c.VkMemoryAllocateInfo{
+		.sType = c.VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+		.pNext = null,
+		.allocationSize = total_size,
+		.memoryTypeIndex = memory_type_index,
+	};
+
+	var memory: c.VkDeviceMemory = undefined;
+	try VK_CHECK(c.vkAllocateMemory(device, &allocate_info, null, &memory));
+	errdefer c.vkFreeMemory(device, memory, null);
+
+	var offset: c.VkDeviceSize = 0;
+	for (images) |image| {
+		var requirements: c.VkMemoryRequirements = undefined;
+		c.vkGetImageMemoryRequirements(device, image, &requirements);
+
+		offset = std.mem.alignForward(c.VkDeviceSize, offset, requirements.alignment);
+
+		try VK_CHECK(c.vkBindImageMemory(device, image, memory, offset));
+
+		offset += requirements.size;
+	}
+
+	return memory;
+}
+// @@@@@@@@@@@@@@@@@@ MEMORY
 
 
 
@@ -77,89 +133,58 @@ fn selectMemoryType(memory_properties: c.VkPhysicalDeviceMemoryProperties, memor
 
 
 
-// <<<<<<<<<<<<<<<<< THIS IS TEMPORARY
-pub const Image = struct{
-	memory: c.VkDeviceMemory,
+// <<<<<<<<<<<<<<<<< RESOURCES
+pub fn createImage2D(
+	device: c.VkDevice,
+	width: u32,
+	height: u32,
+	format: c.VkFormat,
+	usage: c.VkImageUsageFlags) !c.VkImage
+{
+	const image_info = std.mem.zeroInit(c.VkImageCreateInfo, .{
+		.sType = c.VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+		.imageType = c.VK_IMAGE_TYPE_2D,
+		.format = format,
+		.extent = .{ width, height, 1 },
+		.mipLevels = 1,
+		.arrayLayers = 1,
+		.samples = c.VK_SAMPLE_COUNT_1_BIT,
+		.tiling = c.VK_IMAGE_TILING_OPTIMAL,
+		.usage = usage,
+		.initialLayout = c.VK_IMAGE_LAYOUT_UNDEFINED,
+	});
+
+	var image: c.VkImage = null;
+	try VK_CHECK(c.vkCreateImage(device, &image_info, null, &image));
+	return image;
+}
+
+pub fn createImageView2D(
+	device: c.VkDevice,
 	image: c.VkImage,
-	image_view: c.VkImageView,
+	format: c.VkFormat,
+	aspect_mask: c.VkImageAspectFlags,
+	) !c.VkImageView
+{
+	const image_view_info = std.mem.zeroInit(c.VkImageViewCreateInfo, .{
+		.sType = c.VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+		.image = image,
+		.viewType = c.VK_IMAGE_VIEW_TYPE_2D,
+		.format = format,
+		.subresourceRange = .{
+			.aspectMask = aspect_mask,
+			.baseMipLevel = 0,
+			.levelCount = c.VK_REMAINING_MIP_LEVELS,
+			.baseArrayLayer = 0,
+			.layerCount = c.VK_REMAINING_ARRAY_LAYERS,
+		},
+	});
 
-	pub fn init(
-		device: c.VkDevice,
-		memory_properties: c.VkPhysicalDeviceMemoryProperties,
-		width: u32,
-		height: u32,
-		mip_levels: u32,
-		format: c.VkFormat,
-		usage: c.VkImageUsageFlags) !Image
-	{
-
-		const image_info = std.mem.zeroInit(c.VkImageCreateInfo, .{
-			.sType = c.VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-			.imageType = c.VK_IMAGE_TYPE_2D,
-			.format = format,
-			.extent = .{ width, height, 1 },
-			.mipLevels = mip_levels,
-			.arrayLayers = 1,
-			.samples = c.VK_SAMPLE_COUNT_1_BIT,
-			.tiling = c.VK_IMAGE_TILING_OPTIMAL,
-			.usage = usage,
-			.initialLayout = c.VK_IMAGE_LAYOUT_UNDEFINED,
-		});
-
-
-		var image: c.VkImage = null;
-		try VK_CHECK(c.vkCreateImage(device, &image_info, null, &image));
-
-		var memory_requirements: c.VkMemoryRequirements = undefined;
-		c.vkGetImageMemoryRequirements(device, image, &memory_requirements);
-
-		const memory_type_index = try selectMemoryType(memory_properties, memory_requirements.memoryTypeBits, c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-		const allocate_info = c.VkMemoryAllocateInfo{
-			.sType = c.VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-			.pNext = null,
-			.allocationSize = memory_requirements.size,
-			.memoryTypeIndex = memory_type_index,
-		};
-
-		var memory: c.VkDeviceMemory = undefined;
-		try VK_CHECK(c.vkAllocateMemory(device, &allocate_info, null, &memory));
-
-		try VK_CHECK(c.vkBindImageMemory(device, image, memory, 0));
-
-		const aspect_mask: c.VkImageAspectFlags = if(format == c.VK_FORMAT_D32_SFLOAT) c.VK_IMAGE_ASPECT_DEPTH_BIT else c.VK_IMAGE_ASPECT_COLOR_BIT;
-
-		const image_view_info = std.mem.zeroInit(c.VkImageViewCreateInfo, .{
-			.sType = c.VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-			.image = image,
-			.viewType = c.VK_IMAGE_VIEW_TYPE_2D,
-			.format = format,
-			.subresourceRange = .{
-				.aspectMask = aspect_mask,
-				.baseMipLevel = 0,
-				.levelCount = mip_levels,
-				.baseArrayLayer = 0,
-				.layerCount = 1,
-			},
-		});
-
-		var image_view: c.VkImageView = undefined;
-		try VK_CHECK(c.vkCreateImageView(device, &image_view_info, 0, &image_view));
-
-		return .{
-			.image = image,
-			.image_view = image_view,
-			.memory = memory,
-		};
-	}
-
-	pub fn deinit(self: *Image, device: c.VkDevice) void {
-		c.vkDestroyImageView(device, self.image_view, null);
-		c.vkDestroyImage(device, self.image, null);
-		c.vkFreeMemory(device, self.memory, null);
-	}
-};
-// <<<<<<<<<<<<<<<<< THIS IS TEMPORARY
+	var image_view: c.VkImageView = undefined;
+	try VK_CHECK(c.vkCreateImageView(device, &image_view_info, 0, &image_view));
+	return image_view;
+}
+// <<<<<<<<<<<<<<<<< RESOURCES
 
 
 
@@ -268,12 +293,12 @@ fn createDescriptorSet(device: c.VkDevice,
 
 
 // ################# PIPELINES
-fn createRaytracePipeline(self: *@This(), device: c.VkDevice) !c.VkPipeline
+fn createComputePipeline(device: c.VkDevice, shader: c.VkShaderModule, pipeline_layout: c.VkPipelineLayout) !c.VkPipeline
 {
 	const stage = std.mem.zeroInit(c.VkPipelineShaderStageCreateInfo, .{
 		.sType = c.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
 		.stage = c.VK_SHADER_STAGE_COMPUTE_BIT,
-		.module = self.raytrace_cs,
+		.module = shader,
 		.pName = "main",
 		.pSpecializationInfo = null, // TODO!!!!!!!
 	});
@@ -281,7 +306,7 @@ fn createRaytracePipeline(self: *@This(), device: c.VkDevice) !c.VkPipeline
 	const create_info = std.mem.zeroInit(c.VkComputePipelineCreateInfo, .{
 		.sType = c.VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
 		.stage = stage,
-		.layout = self.pipeline_layout,
+		.layout = pipeline_layout,
 	});
 
 	const pipeline_cache: c.VkPipelineCache = null; // TODO!!!!!!!!
@@ -299,7 +324,6 @@ fn createRaytracePipeline(self: *@This(), device: c.VkDevice) !c.VkPipeline
 
 
 // ^^^^^^^^^^^^^^^^^ MODELS
-
 fn CGLTF_CHECK(result: c.cgltf_result) !void {
 	return if (result == c.cgltf_result_success) {} else error.GltfError;
 }
@@ -326,11 +350,15 @@ pub const color_format: c.VkFormat = c.VK_FORMAT_R16G16B16A16_UNORM;
 const local_size_x = 16;
 const local_size_y = 8;
 
-color_target: Image,
+memory_properties: c.VkPhysicalDeviceMemoryProperties,
+
 out_width: u32,
 out_height: u32,
 
-memory_properties: c.VkPhysicalDeviceMemoryProperties,
+color_target: c.VkImage,
+color_target_view: c.VkImageView,
+
+resolution_dependent_memory: c.VkDeviceMemory,
 
 shader_compiler: ShaderCompiler,
 
@@ -393,9 +421,16 @@ pub fn initResolutionDependentResources(self: *@This(), device: c.VkDevice, out_
 	self.out_width = out_width;
 	self.out_height = out_height;
 
-	self.color_target = try Image.init(device, self.memory_properties, out_width, out_height, 1, color_format,
+	self.color_target = try createImage2D(device, out_width, out_height, color_format,
 		c.VK_IMAGE_USAGE_TRANSFER_SRC_BIT | c.VK_IMAGE_USAGE_STORAGE_BIT);
-	errdefer self.color_target.deinit(device);
+	errdefer c.vkDestroyImage(device, self.color_target, null);
+
+	self.resolution_dependent_memory = try allocAndBindMemoryForAllImages(device, &.{self.color_target}, self.memory_properties,
+		c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+	errdefer c.vkFreeMemory(device, self.resolution_dependent_memory, null);
+
+	self.color_target_view = try createImageView2D(device, self.color_target, color_format, c.VK_IMAGE_ASPECT_COLOR_BIT);
+	errdefer c.vkDestroyImageView(device, self.color_target_view, null);
 
 	const write = std.mem.zeroInit(c.VkWriteDescriptorSet, .{
 		.sType = c.VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -406,7 +441,7 @@ pub fn initResolutionDependentResources(self: *@This(), device: c.VkDevice, out_
 		.descriptorType = c.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
 		.pImageInfo = &c.VkDescriptorImageInfo{
 			.sampler = null,
-			.imageView = self.color_target.image_view,
+			.imageView = self.color_target_view,
 			.imageLayout = c.VK_IMAGE_LAYOUT_GENERAL,
 		},
 	});
@@ -415,7 +450,9 @@ pub fn initResolutionDependentResources(self: *@This(), device: c.VkDevice, out_
 }
 
 pub fn deinitResolutionDependentResources(self: *@This(), device: c.VkDevice) void {
-	self.color_target.deinit(device);
+	c.vkFreeMemory(device, self.resolution_dependent_memory, null);
+	c.vkDestroyImageView(device, self.color_target_view, null);
+	c.vkDestroyImage(device, self.color_target, null);
 }
 
 pub fn initPipelines(self: *@This(), device: c.VkDevice, short_term_mem: *ShortTermMem) !void {
@@ -424,7 +461,7 @@ pub fn initPipelines(self: *@This(), device: c.VkDevice, short_term_mem: *ShortT
 		.{ .name = "LOCAL_SIZE_Y", .value = std.fmt.comptimePrint("{}", .{local_size_y}) },
 	}, short_term_mem);
 	errdefer c.vkDestroyShaderModule(device, self.raytrace_cs, null);
-	self.raytrace_pipeline = try self.createRaytracePipeline(device);
+	self.raytrace_pipeline = try createComputePipeline(device, self.raytrace_cs, self.pipeline_layout);
 	errdefer c.vkDestroyPipeline(device, self.raytrace_pipeline, null);
 }
 
@@ -439,7 +476,7 @@ pub fn renderFrame(self: *@This(), command_buffer: c.VkCommandBuffer) void {
 		self.pipeline_layout, 0, 1, &self.descriptor_set, 0, null);
 
 	barrier.pipeline(command_buffer, c.VK_DEPENDENCY_BY_REGION_BIT, &.{}, &[_]c.VkImageMemoryBarrier2{
-		barrier.undefined2ComputeWrite(self.color_target.image),
+		barrier.undefined2ComputeWrite(self.color_target),
 	});
 
 	c.vkCmdBindPipeline(command_buffer, c.VK_PIPELINE_BIND_POINT_COMPUTE, self.raytrace_pipeline);
@@ -448,6 +485,6 @@ pub fn renderFrame(self: *@This(), command_buffer: c.VkCommandBuffer) void {
 	c.vkCmdDispatch(command_buffer, global_size_x, global_size_y, 1);
 
 	barrier.pipeline(command_buffer, c.VK_DEPENDENCY_BY_REGION_BIT, &.{}, &[_]c.VkImageMemoryBarrier2{
-		barrier.computeWrite2TransferSrc(self.color_target.image),
+		barrier.computeWrite2TransferSrc(self.color_target),
 	});
 }

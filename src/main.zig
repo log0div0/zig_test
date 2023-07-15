@@ -383,7 +383,7 @@ pub fn main() !void {
 		};
 
 		c.vkCmdBlitImage(command_buffer,
-			app.color_target.image, c.VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+			app.color_target, c.VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 			swapchain.images[image_index], c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 			1, &blit, c.VK_FILTER_NEAREST);
 

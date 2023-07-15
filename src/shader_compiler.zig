@@ -58,7 +58,7 @@ pub fn load(self: *@This(), device: c.VkDevice,
 		if (std.mem.indexOf(u8, name, ".vert.") != null) c.shaderc_glsl_vertex_shader
 		else if (std.mem.indexOf(u8, name, ".frag.") != null) c.shaderc_glsl_fragment_shader
 		else if (std.mem.indexOf(u8, name, ".comp.") != null) c.shaderc_glsl_compute_shader
-		else @panic("invalid shader extension");
+		else @compileError("invalid shader extension");
 
 	const result = c.shaderc_compile_into_spv(
 		self.handle, temp_buf.ptr, file_size,
