@@ -4,6 +4,7 @@ const c = @import("c.zig");
 const barrier = @import("barrier.zig");
 const ShaderCompiler = @import("shader_compiler.zig");
 const ShortTermMem = @import("short_term_mem.zig");
+const gltf = @import("gltf.zig");
 
 fn VK_CHECK(result: c.VkResult) !void {
 	return if (result == c.VK_SUCCESS) {} else error.VkError;
@@ -323,22 +324,6 @@ fn createComputePipeline(device: c.VkDevice, shader: c.VkShaderModule, pipeline_
 
 
 
-// ^^^^^^^^^^^^^^^^^ MODELS
-fn loadModel() !void
-{
-	const path = "models\\Duck.glb";
-
-	const file = try std.fs.cwd().openFile(path, .{});
-	defer file.close();
-}
-// ^^^^^^^^^^^^^^^^^ MODELS
-
-
-
-
-
-
-
 
 
 pub const color_format: c.VkFormat = c.VK_FORMAT_R16G16B16A16_UNORM;
@@ -394,7 +379,7 @@ pub fn init(physical_device: c.VkPhysicalDevice, device: c.VkDevice,
 	try result.initResolutionDependentResources(device, out_width, out_height);
 	errdefer result.deinitResolutionDependentResources(device);
 
-	try loadModel();
+	try gltf.loadModel();
 
 	return result;
 }
