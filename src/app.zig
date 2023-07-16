@@ -3,7 +3,7 @@ const std = @import("std");
 const c = @import("c.zig");
 const barrier = @import("barrier.zig");
 const ShaderCompiler = @import("shader_compiler.zig");
-const gltf = @import("gltf.zig");
+const scene = @import("scene.zig");
 
 fn VK_CHECK(result: c.VkResult) !void {
 	return if (result == c.VK_SUCCESS) {} else error.VkError;
@@ -351,6 +351,8 @@ descriptor_set: c.VkDescriptorSet,
 raytrace_cs: c.VkShaderModule,
 raytrace_pipeline: c.VkPipeline,
 
+world: scene.World,
+
 pub fn init(physical_device: c.VkPhysicalDevice, device: c.VkDevice,
 	out_width: u32, out_height: u32,
 	allocator: std.mem.Allocator) !@This()
@@ -362,6 +364,9 @@ pub fn init(physical_device: c.VkPhysicalDevice, device: c.VkDevice,
 
 	result.shader_compiler = ShaderCompiler.init();
 	errdefer result.shader_compiler.deinit();
+
+	result.world = try scene.loadModel("models\\Duck.glb", allocator);
+	errdefer result.world.deinit(allocator);
 
 	result.descriptor_set_layout = try createDescriptorSetLayout(device);
 	errdefer c.vkDestroyDescriptorSetLayout(device, result.descriptor_set_layout, null);
@@ -378,12 +383,10 @@ pub fn init(physical_device: c.VkPhysicalDevice, device: c.VkDevice,
 	try result.initResolutionDependentResources(device, out_width, out_height);
 	errdefer result.deinitResolutionDependentResources(device);
 
-	try gltf.loadModel(allocator);
-
 	return result;
 }
 
-pub fn deinit(self: *@This(), device: c.VkDevice) void {
+pub fn deinit(self: *@This(), device: c.VkDevice, allocator: std.mem.Allocator,) void {
 	self.deinitPipelines(device);
 
 	c.vkDestroyDescriptorPool(device, self.descriptor_pool, null);
@@ -392,6 +395,8 @@ pub fn deinit(self: *@This(), device: c.VkDevice) void {
 	c.vkDestroyDescriptorSetLayout(device, self.descriptor_set_layout, null);
 
 	self.shader_compiler.deinit();
+
+	self.world.deinit(allocator);
 
 	self.deinitResolutionDependentResources(device);
 }

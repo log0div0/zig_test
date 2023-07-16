@@ -31,37 +31,86 @@ const Buffer = struct {
 	byteLength: usize,
 };
 
-const Meta = struct {
-	buffers: []Buffer = &.{},
+const BufferView = struct {
+	buffer: usize,
+	byteLength: usize,
+	byteOffset: usize = 0,
 };
 
-pub fn loadModel(allocator: std.mem.Allocator) !void
+const Primitive = struct {
+
+};
+
+const Mesh = struct {
+	name: ?[]u8 = null,
+	// primitives: []Primitive,
+};
+
+const JsonChunk = struct {
+	meshes: []Mesh = &.{},
+};
+
+pub const GltfModel = struct {
+	main_file: std.fs.File,
+	json: JsonChunk,
+	arena: std.heap.ArenaAllocator,
+	path: []const u8,
+	is_binary: bool,
+
+	pub fn deinit(self: *GltfModel) void {
+		self.arena.deinit();
+		self.main_file.close();
+	}
+};
+
+pub fn loadFile(path: []const u8, child_allocator: std.mem.Allocator) !GltfModel
 {
-	const path = "models\\Duck.glb";
 	const ext = std.fs.path.extension(path);
 
 	const file = try std.fs.cwd().openFile(path, .{});
-	defer file.close();
+	errdefer file.close();
+
+	var arena = std.heap.ArenaAllocator.init(child_allocator);
+	errdefer arena.deinit();
+
+	const allocator = arena.allocator();
 
 	if (std.mem.eql(u8, ext, ".glb")) {
 		try readBinaryHeader(file);
 
 		const reader = file.reader();
-		const chunk_length = try reader.readIntLittle(u32);
+
+		const json_chunk = blk: {
+			const chunk_length = try reader.readIntLittle(u32);
+			const chunk_type = try reader.readIntLittle(u32);
+			if (chunk_type != chunk_type_json) {
+				return error.FirstChunkMustBeJson;
+			}
+
+			var json_str = try allocator.alloc(u8, chunk_length);
+			try reader.readNoEof(json_str);
+			const json_chunk = try std.json.parseFromSliceLeaky(JsonChunk, allocator, json_str, .{.ignore_unknown_fields = true});
+
+			if (chunk_length % 4 != 0) {
+				try reader.skipBytes(4 - chunk_length % 4, .{});
+			}
+
+			break :blk json_chunk;
+		};
+
+		_ = try reader.readIntLittle(u32);
 		const chunk_type = try reader.readIntLittle(u32);
-		if (chunk_type != chunk_type_json) {
-			return error.FirstChunkMustBeJson;
+		if (chunk_type != chunk_type_bin) {
+			return error.SecondChunkMustBeBin;
 		}
 
-		var json_str = try allocator.alloc(u8, chunk_length);
-		defer allocator.free(json_str);
-
-		try reader.readNoEof(json_str);
-
-		const json = try std.json.parseFromSlice(Meta, allocator, json_str, .{.ignore_unknown_fields = true});
-		defer json.deinit();
-
-		std.debug.print("{}\n", .{json});
+		return .{
+			.main_file = file,
+			.json = json_chunk,
+			.arena = arena,
+			.path = path,
+			.is_binary = true,
+		};
 	} else if (std.mem.eql(u8, ext, ".gltf")) {
 		return error.ImplementMe;
 	} else {
