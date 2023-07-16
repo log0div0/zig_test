@@ -250,7 +250,7 @@ export fn keyCallback(window: ?*c.GLFWwindow, key: c_int, scancode: c_int, actio
 }
 
 pub fn main() !void {
-	var short_term_mem = ShortTermMem.init();
+	var short_term_mem = try ShortTermMem.init(1024 * 1024);
 	defer short_term_mem.deinit();
 
 	_ = c.glfwSetErrorCallback(glfwErrorCallback);

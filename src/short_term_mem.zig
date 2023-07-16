@@ -4,17 +4,31 @@ const c = @import("c.zig");
 
 buf: ?*anyopaque = null,
 buf_size: usize = 0,
+max_requested_mem: usize = 0,
 is_locked: bool = false,
 
 const Self = @This();
 
-pub fn init() Self {
-	return .{};
+pub fn init(default_capacity: usize) !Self {
+	if (default_capacity == 0) {
+		return .{};
+	}
+	const result = .{
+		.buf = c.malloc(default_capacity),
+		.buf_size = default_capacity,
+	};
+	if (result.buf == null) {
+		return error.OutOfMemory;
+	}
+	return result;
 }
 
 pub fn deinit(self: *Self) void {
 	std.debug.assert(self.is_locked == false);
-	std.debug.print("ShortTermMem = {}\n", .{std.fmt.fmtIntSizeBin(self.buf_size)});
+	std.debug.print("\n======== ShortTermMem ========\n{s:<20} = {}\n{s:<20} = {}\n\n", .{
+		"capacity", std.fmt.fmtIntSizeBin(self.buf_size),
+		"max_requested_mem", std.fmt.fmtIntSizeBin(self.max_requested_mem)
+	});
 	c.free(self.buf);
 }
 
@@ -26,6 +40,8 @@ pub fn lock(self: *Self, comptime T: type, n: usize) ![]T {
 	if (new_buf_size == 0) {
 		return error.AllocatingZeroBytesIsUndefinedBehaviour;
 	}
+
+	self.max_requested_mem = @max(self.max_requested_mem, new_buf_size);
 
 	if (new_buf_size > self.buf_size) {
 		const new_buf = c.realloc(self.buf, new_buf_size);
