@@ -42,10 +42,6 @@ fn linkEverything(b: *std.Build, module: *std.Build.Step.Compile) !void
     } else {
         return error.VulkanEnvVarIsNotSet;
     }
-
-    // include and compile cgltf
-    module.addIncludePath("libs");
-    module.addCSourceFile("src/gltf.c", &.{});
 }
 
 // Although this function looks imperative, note that its job is to

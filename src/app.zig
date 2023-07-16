@@ -324,16 +324,12 @@ fn createComputePipeline(device: c.VkDevice, shader: c.VkShaderModule, pipeline_
 
 
 // ^^^^^^^^^^^^^^^^^ MODELS
-fn CGLTF_CHECK(result: c.cgltf_result) !void {
-	return if (result == c.cgltf_result_success) {} else error.GltfError;
-}
-
 fn loadModel() !void
 {
-	const options = std.mem.zeroes(c.cgltf_options);
-	var data: ?*c.cgltf_data = null;
-	try CGLTF_CHECK(c.cgltf_parse_file(&options, "models\\Duck.glb", &data));
-	defer c.cgltf_free(data);
+	const path = "models\\Duck.glb";
+
+	const file = try std.fs.cwd().openFile(path, .{});
+	defer file.close();
 }
 // ^^^^^^^^^^^^^^^^^ MODELS
 
