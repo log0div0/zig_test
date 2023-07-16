@@ -3,7 +3,6 @@ const std = @import("std");
 const c = @import("c.zig");
 const barrier = @import("barrier.zig");
 const ShaderCompiler = @import("shader_compiler.zig");
-const ShortTermMem = @import("short_term_mem.zig");
 const gltf = @import("gltf.zig");
 
 fn VK_CHECK(result: c.VkResult) !void {
@@ -354,7 +353,7 @@ raytrace_pipeline: c.VkPipeline,
 
 pub fn init(physical_device: c.VkPhysicalDevice, device: c.VkDevice,
 	out_width: u32, out_height: u32,
-	short_term_mem: *ShortTermMem) !@This()
+	allocator: std.mem.Allocator) !@This()
 {
 	var result: @This() = undefined;
 
@@ -373,13 +372,13 @@ pub fn init(physical_device: c.VkPhysicalDevice, device: c.VkDevice,
 	errdefer c.vkDestroyDescriptorPool(device, result.descriptor_pool, null);
 	result.descriptor_set = try createDescriptorSet(device, result.descriptor_pool, result.descriptor_set_layout);
 
-	try result.initPipelines(device, short_term_mem);
+	try result.initPipelines(device, allocator);
 	errdefer result.deinitPipelines(device);
 
 	try result.initResolutionDependentResources(device, out_width, out_height);
 	errdefer result.deinitResolutionDependentResources(device);
 
-	try gltf.loadModel();
+	try gltf.loadModel(allocator);
 
 	return result;
 }
@@ -436,11 +435,11 @@ pub fn deinitResolutionDependentResources(self: *@This(), device: c.VkDevice) vo
 	c.vkDestroyImage(device, self.color_target, null);
 }
 
-pub fn initPipelines(self: *@This(), device: c.VkDevice, short_term_mem: *ShortTermMem) !void {
+pub fn initPipelines(self: *@This(), device: c.VkDevice, allocator: std.mem.Allocator) !void {
 	self.raytrace_cs = try self.shader_compiler.load(device, "raytrace.comp.glsl", &.{
 		.{ .name = "LOCAL_SIZE_X", .value = std.fmt.comptimePrint("{}", .{local_size_x}) },
 		.{ .name = "LOCAL_SIZE_Y", .value = std.fmt.comptimePrint("{}", .{local_size_y}) },
-	}, short_term_mem);
+	}, allocator);
 	errdefer c.vkDestroyShaderModule(device, self.raytrace_cs, null);
 	self.raytrace_pipeline = try createComputePipeline(device, self.raytrace_cs, self.pipeline_layout);
 	errdefer c.vkDestroyPipeline(device, self.raytrace_pipeline, null);

@@ -4,7 +4,6 @@ const c = @import("c.zig");
 const Swapchain = @import("swapchain.zig");
 const ShaderCompiler = @import("shader_compiler.zig");
 const App = @import("app.zig");
-const ShortTermMem = @import("short_term_mem.zig");
 const barrier = @import("barrier.zig");
 
 export fn glfwErrorCallback(err: c_int, description: [*c]const u8) void {
@@ -55,12 +54,12 @@ fn createInstance() !c.VkInstance {
 	return instance;
 }
 
-fn getGraphicsFamilyIndex(device: c.VkPhysicalDevice, short_term_mem: *ShortTermMem) !u32 {
+fn getGraphicsFamilyIndex(device: c.VkPhysicalDevice, allocator: std.mem.Allocator) !u32 {
 	var queue_count: u32 = 0;
 	c.vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_count, null);
 
-	var queues = try short_term_mem.lock(c.VkQueueFamilyProperties, queue_count);
-	defer short_term_mem.unlock();
+	var queues = try allocator.alloc(c.VkQueueFamilyProperties, queue_count);
+	defer allocator.free(queues);
 
 	c.vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_count, queues.ptr);
 
@@ -78,7 +77,7 @@ fn supportsPresentation(device: c.VkPhysicalDevice, family_index: u32) bool
 	return c.vkGetPhysicalDeviceWin32PresentationSupportKHR(device, family_index) != 0;
 }
 
-fn pickPhysicalDevice(physical_devices: []c.VkPhysicalDevice, short_term_mem: *ShortTermMem) !c.VkPhysicalDevice {
+fn pickPhysicalDevice(physical_devices: []c.VkPhysicalDevice, allocator: std.mem.Allocator) !c.VkPhysicalDevice {
 	var preferred: c.VkPhysicalDevice = null;
 	var fallback: c.VkPhysicalDevice = null;
 
@@ -89,7 +88,7 @@ fn pickPhysicalDevice(physical_devices: []c.VkPhysicalDevice, short_term_mem: *S
 
 		std.debug.print("GPU{}: {s}\n", .{i, @as([*c]const u8, @ptrCast(&props.deviceName))});
 
-		const family_index = try getGraphicsFamilyIndex(device, short_term_mem);
+		const family_index = try getGraphicsFamilyIndex(device, allocator);
 		if (family_index == c.VK_QUEUE_FAMILY_IGNORED) {
 			continue;
 		}
@@ -187,14 +186,14 @@ fn createSurface(instance: c.VkInstance, window: ?*c.GLFWwindow) !c.VkSurfaceKHR
 	return surface;
 }
 
-fn getSurfaceFormat(physical_device: c.VkPhysicalDevice, surface: c.VkSurfaceKHR, short_term_mem: *ShortTermMem) !c.VkFormat
+fn getSurfaceFormat(physical_device: c.VkPhysicalDevice, surface: c.VkSurfaceKHR, allocator: std.mem.Allocator) !c.VkFormat
 {
 	var format_count: u32 = 0;
 	try VK_CHECK(c.vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &format_count, 0));
 
 	std.debug.assert(format_count > 0);
-	var formats = try short_term_mem.lock(c.VkSurfaceFormatKHR, format_count);
-	defer short_term_mem.unlock();
+	var formats = try allocator.alloc(c.VkSurfaceFormatKHR, format_count);
+	defer allocator.free(formats);
 
 	try VK_CHECK(c.vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &format_count, formats.ptr));
 
@@ -250,8 +249,10 @@ export fn keyCallback(window: ?*c.GLFWwindow, key: c_int, scancode: c_int, actio
 }
 
 pub fn main() !void {
-	var short_term_mem = try ShortTermMem.init(1024 * 1024);
-	defer short_term_mem.deinit();
+	var heap = std.heap.GeneralPurposeAllocator(.{}){};
+	defer _ = heap.deinit();
+
+	const allocator = heap.allocator();
 
 	_ = c.glfwSetErrorCallback(glfwErrorCallback);
 
@@ -269,9 +270,9 @@ pub fn main() !void {
 	var physical_device_count: u32 = physical_devices.len;
 	try VK_CHECK(c.vkEnumeratePhysicalDevices(instance, &physical_device_count, &physical_devices));
 
-	const physical_device = try pickPhysicalDevice(physical_devices[0..physical_device_count], &short_term_mem);
+	const physical_device = try pickPhysicalDevice(physical_devices[0..physical_device_count], allocator);
 
-	const family_index = try getGraphicsFamilyIndex(physical_device, &short_term_mem);
+	const family_index = try getGraphicsFamilyIndex(physical_device, allocator);
 	std.debug.assert(family_index != c.VK_QUEUE_FAMILY_IGNORED);
 
 	const device = try createDevice(physical_device, family_index);
@@ -288,7 +289,7 @@ pub fn main() !void {
 	const surface = try createSurface(instance, window);
 	defer c.vkDestroySurfaceKHR(instance, surface, null);
 
-	const surface_format = try getSurfaceFormat(physical_device, surface, &short_term_mem);
+	const surface_format = try getSurfaceFormat(physical_device, surface, allocator);
 
 	const acquire_semaphore = try createSemaphore(device);
 	defer c.vkDestroySemaphore(device, acquire_semaphore, null);
@@ -321,7 +322,7 @@ pub fn main() !void {
 	var swapchain = try Swapchain.init(physical_device, device, surface, family_index, surface_format, null);
 	defer swapchain.deinit(device);
 
-	var app = try App.init(physical_device, device, swapchain.width, swapchain.height, &short_term_mem);
+	var app = try App.init(physical_device, device, swapchain.width, swapchain.height, allocator);
 	defer app.deinit(device);
 
 	defer _ = c.vkDeviceWaitIdle(device);
