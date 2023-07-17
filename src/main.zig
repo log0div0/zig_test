@@ -323,7 +323,7 @@ pub fn main() !void {
 	defer swapchain.deinit(device);
 
 	var app = try App.init(physical_device, device, swapchain.width, swapchain.height, allocator);
-	defer app.deinit(device, allocator);
+	defer app.deinit(device);
 
 	defer _ = c.vkDeviceWaitIdle(device);
 
